@@ -1,4 +1,7 @@
 import AppKit
+import os
+
+private let keyLog = Logger(subsystem: "dev.hyoban.remote-keyboard", category: "keyboard")
 
 /// 修饰键状态：点一下只作用于下一个键，快速点两下锁定，再点一下解除。
 final class ModifierState {
@@ -6,6 +9,7 @@ final class ModifierState {
 
     private var levels: [Modifier: Level] = [:]
     private var lastTap: [Modifier: Date] = [:]
+    private var onceSince: [Modifier: Date] = [:]
 
     func level(_ m: Modifier) -> Level { levels[m] ?? .off }
 
@@ -13,7 +17,9 @@ final class ModifierState {
         let now = Date()
         let quick = now.timeIntervalSince(lastTap[m] ?? .distantPast) < 0.35
         switch level(m) {
-        case .off: levels[m] = .once
+        case .off:
+            levels[m] = .once
+            onceSince[m] = now
         case .once: levels[m] = quick ? .locked : .off
         case .locked: levels[m] = .off
         }
@@ -26,6 +32,19 @@ final class ModifierState {
 
     func toggleLock(_ m: Modifier) {
         levels[m] = level(m) == .locked ? .off : .locked
+    }
+
+    /// 误触点亮的一次性修饰键超过一段时间没用掉就取消，免得下一次按键意外变成快捷键。
+    /// 返回是否有修饰键被取消。
+    func expireOnce(olderThan seconds: TimeInterval) -> Bool {
+        var changed = false
+        for (m, l) in levels where l == .once {
+            if Date().timeIntervalSince(onceSince[m] ?? .distantPast) >= seconds {
+                levels[m] = .off
+                changed = true
+            }
+        }
+        return changed
     }
 
     func consumeOnce() {
@@ -58,6 +77,10 @@ final class KeyboardView: NSView {
     private var pressed: (row: Int, col: Int)?
     private var repeatDelay: Timer?
     private var repeatTimer: Timer?
+    /// 当前这次按压：按下的位置和时间、是否已经开始连发。
+    private var touch: (start: NSPoint, time: Date, repeating: Bool)?
+    private var lastRelease: (point: NSPoint, time: Date)?
+    private var modifierExpiry: Timer?
     private var resizeStart: (mouse: NSPoint, frame: NSRect)?
 
     override var isFlipped: Bool { true }
@@ -235,37 +258,104 @@ final class KeyboardView: NSView {
             }
             return
         }
-        guard let hit = keyFrames().first(where: { $0.rect.contains(p) }) else { return }
+        // 远控软件偶尔会重复发送同一次点击，同一位置 60ms 内的第二次按下直接忽略。
+        if let last = lastRelease, Date().timeIntervalSince(last.time) < 0.06,
+           hypot(p.x - last.point.x, p.y - last.point.y) < 4 {
+            keyLog.notice("ignored duplicate press")
+            return
+        }
+        guard let hit = key(at: p) else { return }
+        // 按下时只高亮，松手时才确认（可以滑到正确的键再松手）。
         pressed = (hit.row, hit.col)
-        if let fire = activate(hit.def), hit.def.repeats {
-            repeatDelay = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { _ in fire() }
-                RunLoop.current.add(self.repeatTimer!, forMode: .common)
+        touch = (p, Date(), false)
+        if hit.def.repeats {
+            repeatDelay = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+                self?.startRepeating()
             }
             RunLoop.current.add(repeatDelay!, forMode: .common)
         }
         needsDisplay = true
     }
 
+    /// 按住可连发的键超过 0.6 秒：先触发一次，然后每 60ms 重复。
+    private func startRepeating() {
+        guard var t = touch, let pressed,
+              let k = keyFrames().first(where: { $0.row == pressed.row && $0.col == pressed.col }),
+              let fire = activate(k.def)
+        else { return }
+        t.repeating = true
+        touch = t
+        keyLog.notice("repeat \(k.def.label, privacy: .public)")
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { _ in fire() }
+        RunLoop.current.add(repeatTimer!, forMode: .common)
+    }
+
     override func mouseDragged(with event: NSEvent) {
-        guard let start = resizeStart, let window else { return }
-        // 拖左上角缩放，右下角固定，保持宽高比。
-        let dx = NSEvent.mouseLocation.x - start.mouse.x
-        let maxWidth = window.screen?.visibleFrame.width ?? 3000
-        let width = min(max(start.frame.width - dx, minWidth), maxWidth)
-        let height = width * start.frame.height / start.frame.width
-        let frame = NSRect(x: start.frame.maxX - width, y: start.frame.minY, width: width, height: height)
-        window.setFrame(frame, display: true)
+        if let start = resizeStart, let window {
+            // 拖左上角缩放，右下角固定，保持宽高比。
+            let dx = NSEvent.mouseLocation.x - start.mouse.x
+            let maxWidth = window.screen?.visibleFrame.width ?? 3000
+            let width = min(max(start.frame.width - dx, minWidth), maxWidth)
+            let height = width * start.frame.height / start.frame.width
+            let frame = NSRect(x: start.frame.maxX - width, y: start.frame.minY, width: width, height: height)
+            window.setFrame(frame, display: true)
+            return
+        }
+        guard let t = touch, !t.repeating else { return }
+        // 手指滑动时，高亮跟着走到手指下面的键；滑得太远就当作手势，取消高亮。
+        let p = convert(event.locationInWindow, from: nil)
+        let next = moved(from: t.start, to: p) ? nil : key(at: p).map { ($0.row, $0.col) }
+        if next?.0 != pressed?.row || next?.1 != pressed?.col {
+            pressed = next
+            needsDisplay = true
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
         resizeStart = nil
         repeatDelay?.invalidate()
         repeatTimer?.invalidate()
-        if pressed != nil {
-            pressed = nil
-            needsDisplay = true
+        defer {
+            touch = nil
+            if pressed != nil {
+                pressed = nil
+                needsDisplay = true
+            }
+        }
+        guard let t = touch else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        lastRelease = (p, Date())
+        let ms = Int(Date().timeIntervalSince(t.time) * 1000)
+        let distance = Int(hypot(p.x - t.start.x, p.y - t.start.y))
+        if t.repeating { return }
+        guard !moved(from: t.start, to: p), let hit = key(at: p) else {
+            keyLog.notice("cancelled press: held \(ms)ms, moved \(distance)pt")
+            return
+        }
+        keyLog.notice("tap \(hit.def.label, privacy: .public): held \(ms)ms, moved \(distance)pt")
+        _ = activate(hit.def)
+        if case .modifier = hit.def.action { scheduleModifierExpiry() }
+        needsDisplay = true
+    }
+
+    /// 从按下到松手移动超过 1.5 个键宽，就是滑动手势而不是按键。
+    private func moved(from a: NSPoint, to b: NSPoint) -> Bool {
+        hypot(b.x - a.x, b.y - a.y) > metrics.unit * 1.5
+    }
+
+    /// 按整格判断点中了哪个键（键之间的空隙也算），点在两个键中间就算离它最近的那个。
+    private func key(at p: NSPoint) -> (row: Int, col: Int, def: KeyDef, rect: NSRect)? {
+        guard p.y >= metrics.topHeight else { return nil }
+        let gap = metrics.gap
+        return keyFrames().first { $0.rect.insetBy(dx: -gap / 2, dy: -gap / 2).contains(p) }
+    }
+
+    private func scheduleModifierExpiry() {
+        modifierExpiry?.invalidate()
+        modifierExpiry = Timer.scheduledTimer(withTimeInterval: 5.05, repeats: false) { [weak self] _ in
+            guard let self, self.mods.expireOnce(olderThan: 5) else { return }
+            keyLog.notice("one-shot modifier expired")
+            self.needsDisplay = true
         }
     }
 
