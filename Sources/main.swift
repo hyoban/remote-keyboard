@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let sizeMenu = NSMenu()
-        for (title, fraction) in [("小（屏宽 40%）", 0.4), ("中（屏宽 60%）", 0.6), ("大（屏宽 80%）", 0.8), ("全宽", 1.0)] {
+        for (title, fraction) in [("小（屏宽 50%）", 0.5), ("中（屏宽 70%）", 0.7), ("大（屏宽 85%）", 0.85), ("全宽", 1.0)] {
             let i = item(title, #selector(setSize(_:)))
             i.representedObject = fraction
             sizeMenu.addItem(i)
@@ -178,14 +178,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-/// 把四个面板渲染成 PNG（用于 README 截图和检查布局），不显示任何窗口。
+/// 把键盘的默认、Shift、fn 三种状态渲染成 PNG（用于 README 截图和检查布局），不显示任何窗口。
 func renderSnapshots(to dir: String) {
     let url = URL(fileURLWithPath: dir)
     try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    let width: CGFloat = 1000
-    let view = KeyboardView(frame: NSRect(x: 0, y: 0, width: width, height: width * KeyboardController.aspect))
-    for (name, panel) in [("letters", PanelID.letters), ("symbols", .symbols), ("symbols2", .symbols2), ("fn", .fn)] {
-        view.panel = panel
+    let width: CGFloat = 1200
+    for (name, modifier) in [("keyboard", nil), ("keyboard-shift", Modifier.shift), ("keyboard-fn", .fn)] {
+        let view = KeyboardView(frame: NSRect(x: 0, y: 0, width: width, height: width * KeyboardController.aspect))
+        if let modifier { view.mods.tap(modifier) }
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url.appendingPathComponent("\(name).png"))

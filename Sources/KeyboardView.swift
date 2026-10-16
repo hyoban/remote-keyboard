@@ -24,6 +24,10 @@ final class ModifierState {
         Modifier.allCases.reduce(into: CGEventFlags()) { if level($1) != .off { $0.insert($1.flag) } }
     }
 
+    func toggleLock(_ m: Modifier) {
+        levels[m] = level(m) == .locked ? .off : .locked
+    }
+
     func consumeOnce() {
         for (m, l) in levels where l == .once { levels[m] = .off }
     }
@@ -37,17 +41,17 @@ private enum Palette {
     static let accent = NSColor.systemBlue
     static let text = NSColor.white
     static let muted = NSColor(white: 1, alpha: 0.45)
+    static let secondaryText = NSColor(white: 1, alpha: 0.55)
     static let warning = NSColor.systemOrange
 }
 
 final class KeyboardView: NSView {
-    var panel: PanelID = .letters { didSet { needsDisplay = true } }
     var hasPermission = true { didSet { if oldValue != hasPermission { needsDisplay = true } } }
 
     var onCollapse: (() -> Void)?
     var onPermissionTap: (() -> Void)?
     var onActivity: (() -> Void)?
-    var minWidth: CGFloat = 420
+    var minWidth: CGFloat = 560
 
     let mods = ModifierState()
 
@@ -81,15 +85,13 @@ final class KeyboardView: NSView {
     private func keyFrames() -> [(row: Int, col: Int, def: KeyDef, rect: NSRect)] {
         let m = metrics
         var result: [(Int, Int, KeyDef, NSRect)] = []
-        for (r, row) in Layouts.rows(for: panel).enumerated() {
+        for (r, row) in Layouts.rows.enumerated() {
             var x = m.pad
             let y = m.topHeight + CGFloat(r) * m.rowHeight
             for (c, def) in row.enumerated() {
                 let w = def.width * m.unit
-                if case .spacer = def.action {} else {
-                    let rect = NSRect(x: x, y: y, width: w, height: m.rowHeight).insetBy(dx: m.gap / 2, dy: m.gap / 2)
-                    result.append((r, c, def, rect))
-                }
+                let rect = NSRect(x: x, y: y, width: w, height: m.rowHeight).insetBy(dx: m.gap / 2, dy: m.gap / 2)
+                result.append((r, c, def, rect))
                 x += w
             }
         }
@@ -143,13 +145,21 @@ final class KeyboardView: NSView {
     private func drawKey(_ def: KeyDef, in rect: NSRect, isPressed: Bool) {
         var fill = def.style == .function ? Palette.functionKey : Palette.key
         var locked = false
-        if case .modifier(let m) = def.action {
+        switch def.action {
+        case .modifier(let m):
             switch mods.level(m) {
             case .once: fill = Palette.accent
             case .locked: fill = Palette.accent; locked = true
             case .off: break
             }
+        case .capsLock where mods.level(.shift) == .locked:
+            fill = Palette.accent
+            locked = true
+        default:
+            break
         }
+        let fnActive = mods.level(.fn) != .off
+        if fnActive, def.fnLabel != nil { fill = Palette.accent.withAlphaComponent(0.55) }
         if isPressed { fill = Palette.pressed }
         fill.setFill()
         let radius = min(rect.height, rect.width) * 0.16
@@ -162,18 +172,36 @@ final class KeyboardView: NSView {
             NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
         }
 
+        let shiftActive = mods.level(.shift) != .off
         var label = def.label
+        var secondary: String?
         if case .inputSource = def.action { label = InputSources.shortLabel() }
-        if def.isLetter, mods.level(.shift) != .off { label = label.uppercased() }
+        if def.isLetter, shiftActive { label = label.uppercased() }
+        if let shifted = def.shiftedLabel {
+            label = shiftActive ? shifted : def.label
+            secondary = shiftActive ? def.label : shifted
+        }
+        if fnActive, let fnLabel = def.fnLabel {
+            label = fnLabel
+            secondary = nil
+        }
 
-        let base = metrics.rowHeight * 0.42
+        let base = metrics.rowHeight * 0.4
         let size: CGFloat
         switch label.count {
         case 0...1: size = base
-        case 2: size = base * 0.72
+        case 2: size = base * 0.75
         default: size = base * 0.56
         }
-        drawText(label, in: rect, size: size, color: Palette.text)
+        if let secondary {
+            // 像实体键帽一样：上方小字，下方主字符。
+            let top = NSRect(x: rect.minX, y: rect.minY + rect.height * 0.08, width: rect.width, height: rect.height * 0.38)
+            let bottom = NSRect(x: rect.minX, y: rect.minY + rect.height * 0.4, width: rect.width, height: rect.height * 0.5)
+            drawText(secondary, in: top, size: base * 0.55, color: Palette.secondaryText)
+            drawText(label, in: bottom, size: base * 0.85, color: Palette.text)
+        } else {
+            drawText(label, in: rect, size: size, color: Palette.text)
+        }
     }
 
     private func drawText(_ s: String, in rect: NSRect, size: CGFloat, color: NSColor,
@@ -243,10 +271,10 @@ final class KeyboardView: NSView {
 
     /// 执行按键，返回用于长按连发的闭包（连发时沿用第一次按下时的修饰键）。
     private func activate(_ def: KeyDef) -> (() -> Void)? {
-        switch def.action {
-        case .char(let code, let shift):
-            var f = mods.flags
-            if shift { f.insert(.maskShift) }
+        let action = mods.level(.fn) != .off ? def.fnAction ?? def.action : def.action
+        switch action {
+        case .char(let code):
+            let f = mods.flags
             mods.consumeOnce()
             let fire = { KeySender.press(code, flags: f) }
             fire()
@@ -259,12 +287,10 @@ final class KeyboardView: NSView {
             return fire
         case .modifier(let m):
             mods.tap(m)
-        case .panel(let p):
-            panel = p
+        case .capsLock:
+            mods.toggleLock(.shift)
         case .inputSource:
             InputSources.selectNext()
-        case .spacer:
-            break
         }
         return nil
     }

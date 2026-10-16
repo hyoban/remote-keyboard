@@ -12,17 +12,12 @@ let keyCodes: [String: CGKeyCode] = [
     "return": 36, "tab": 48, "space": 49, "backspace": 51, "escape": 53,
     "forwarddelete": 117, "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
     "left": 123, "right": 124, "down": 125, "up": 126,
-]
-
-/// 需要按住 Shift 才能打出的符号 → 对应的基础键。
-let shiftedSymbols: [String: String] = [
-    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8",
-    "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\",
-    ":": ";", "\"": "'", "<": ",", ">": ".", "?": "/", "~": "`",
+    "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+    "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
 ]
 
 private let arrowKeys: Set<CGKeyCode> = [123, 124, 125, 126]
-private let navigationKeys: Set<CGKeyCode> = [115, 119, 116, 121, 117]
+private let navigationKeys: Set<CGKeyCode> = [115, 119, 116, 121, 117, 122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
 
 /// 把按键作为系统键盘事件发给当前获得焦点的 App。
 /// 发的是键码而不是字符，所以 Mac 自己的输入法（拼音等）会照常工作。

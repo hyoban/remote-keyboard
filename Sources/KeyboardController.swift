@@ -20,7 +20,7 @@ final class KeyboardPanel: NSPanel {
 }
 
 final class KeyboardController {
-    static let aspect: CGFloat = 0.36
+    static let aspect: CGFloat = 0.34
     static let bubbleSize: CGFloat = 56
 
     let keyboardView = KeyboardView()
@@ -29,6 +29,8 @@ final class KeyboardController {
     private(set) var collapsed = false
     private var expandedFrame: NSRect
     private let defaults = UserDefaults.standard
+    /// 布局改成 68 配列后宽高比变了，换个 key 让旧的窗口尺寸失效。
+    private let frameKey = "frame.68"
 
     var isVisible: Bool { panel.isVisible }
 
@@ -41,7 +43,7 @@ final class KeyboardController {
     }
 
     init() {
-        let saved = defaults.string(forKey: "frame").map(NSRectFromString)
+        let saved = defaults.string(forKey: frameKey).map(NSRectFromString)
         expandedFrame = saved.flatMap { $0.width > 0 ? $0 : nil } ?? Self.defaultFrame()
         panel = KeyboardPanel(contentRect: expandedFrame)
         panel.contentView = keyboardView
@@ -68,7 +70,7 @@ final class KeyboardController {
 
     static func defaultFrame() -> NSRect {
         let vf = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let w = min(vf.width * 0.6, 1000)
+        let w = min(vf.width * 0.7, 1200)
         let h = w * aspect
         return NSRect(x: vf.midX - w / 2, y: vf.minY + 8, width: w, height: h)
     }
@@ -116,7 +118,7 @@ final class KeyboardController {
     private func saveFrame() {
         guard !collapsed else { return }
         expandedFrame = panel.frame
-        defaults.set(NSStringFromRect(expandedFrame), forKey: "frame")
+        defaults.set(NSStringFromRect(expandedFrame), forKey: frameKey)
     }
 
     private func clamped(_ frame: NSRect) -> NSRect {
