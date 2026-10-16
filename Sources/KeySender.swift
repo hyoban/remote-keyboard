@@ -43,6 +43,67 @@ enum KeySender {
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
     }
+
+    /// 把一整段文字上屏到当前光标位置（Telegram 发来的消息用这个）。
+    /// 单行直接注入 Unicode 字符；多行用粘贴，避免换行被当成回车把消息提前发出去。
+    static func type(_ text: String) {
+        if text.contains("\n") {
+            paste(text)
+        } else {
+            InputSources.withKeyboardLayout { typeUnicode(text) }
+        }
+    }
+
+    private static func typeUnicode(_ s: String) {
+        let units = Array(s.utf16)
+        var i = 0
+        while i < units.count {
+            var end = min(i + 16, units.count)
+            if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
+            var chunk = Array(units[i..<end])
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+            else { return }
+            down.flags = []
+            up.flags = []
+            down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+            up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            usleep(4000)
+            i = end
+        }
+    }
+
+    private static var savedPasteboard: [NSPasteboardItem]?
+    private static var restoreWork: DispatchWorkItem?
+
+    /// 剪贴板 + ⌘V，粘贴后恢复原来的剪贴板内容。
+    private static func paste(_ text: String) {
+        let pb = NSPasteboard.general
+        if savedPasteboard == nil {
+            savedPasteboard = (pb.pasteboardItems ?? []).map { item in
+                let copy = NSPasteboardItem()
+                for t in item.types {
+                    if let d = item.data(forType: t) { copy.setData(d, forType: t) }
+                }
+                return copy
+            }
+        }
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        usleep(20_000)
+        press(keyCodes["v"]!, flags: .maskCommand)
+        restoreWork?.cancel()
+        let work = DispatchWorkItem {
+            guard let items = savedPasteboard else { return }
+            pb.clearContents()
+            if !items.isEmpty { pb.writeObjects(items) }
+            savedPasteboard = nil
+        }
+        restoreWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
 }
 
 /// 切换 Mac 的输入法（中/英），不依赖用户设置的切换快捷键。
@@ -71,6 +132,22 @@ enum InputSources {
         let currentID = property(current, kTISPropertyInputSourceID)
         let index = list.firstIndex { property($0, kTISPropertyInputSourceID) == currentID } ?? -1
         TISSelectInputSource(list[(index + 1) % list.count])
+    }
+
+    /// 当前是中文等输入法时，临时切到英文键盘布局再执行，避免输入法截获注入的字符。
+    static func withKeyboardLayout(_ body: () -> Void) {
+        guard let current = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+              property(current, kTISPropertyInputSourceType) != (kTISTypeKeyboardLayout as String),
+              let ascii = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue()
+        else {
+            body()
+            return
+        }
+        TISSelectInputSource(ascii)
+        usleep(40_000)
+        body()
+        usleep(40_000)
+        TISSelectInputSource(current)
     }
 
     /// 当前输入法的简短标识：键盘布局显示 "EN"，输入法显示 "中"。
