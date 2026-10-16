@@ -7,7 +7,8 @@ final class KeyboardPanel: NSPanel {
                    backing: .buffered, defer: false)
         isFloatingPanel = true
         level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        // transient：所有桌面都显示，进入调度中心（Mission Control）时自动隐藏。
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         isOpaque = false
