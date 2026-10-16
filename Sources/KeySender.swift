@@ -24,7 +24,8 @@ private let navigationKeys: Set<CGKeyCode> = [115, 119, 116, 121, 117, 122, 120,
 enum KeySender {
     private static let source = CGEventSource(stateID: .hidSystemState)
 
-    static var hasPermission: Bool { CGPreflightPostEventAccess() }
+    /// 用辅助功能信任作为唯一的权限：它同时覆盖发送按键和读取焦点元素。
+    static var hasPermission: Bool { AXIsProcessTrusted() }
 
     static func press(_ code: CGKeyCode, flags: CGEventFlags) {
         var flags = flags

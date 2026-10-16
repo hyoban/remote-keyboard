@@ -27,5 +27,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-codesign --force --sign - "$APP" >/dev/null 2>&1
+# 用 bundle id 作为签名要求，而不是默认的二进制哈希，
+# 这样重新构建后 macOS 仍认为是同一个 App，辅助功能权限不会失效。
+codesign --force --sign - --identifier dev.hyoban.remote-keyboard \
+  -r='designated => identifier "dev.hyoban.remote-keyboard"' "$APP"
 echo "构建完成: $APP"

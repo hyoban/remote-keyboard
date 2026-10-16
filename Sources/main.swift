@@ -34,8 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updatePermission(prompt: Bool) {
-        var granted = KeySender.hasPermission
-        if !granted, prompt { granted = CGRequestPostEventAccess() }
+        let granted = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary)
         controller.keyboardView.hasPermission = granted
     }
 
