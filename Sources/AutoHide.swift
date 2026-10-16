@@ -22,6 +22,8 @@ final class AutoHide {
     private var enhancedPIDs: Set<pid_t> = []
     /// 最近一次聚焦在输入框时所在的 App。
     private var lastTextPID: pid_t?
+    /// 最近一次点在键盘以外的时间，用来区分“用户点走了”和“App 重新渲染导致的焦点闪动”。
+    private var lastOutsideClick = Date.distantPast
     private var observer: AXObserver?
     private var observedPID: pid_t?
 
@@ -54,6 +56,11 @@ final class AutoHide {
             self?.observeFrontmostApp()
             self?.evaluateFocus()
         }
+    }
+
+    func noteClick(at point: CGPoint) {
+        guard !controller.contains(quartzPoint: point) else { return }
+        lastOutsideClick = Date()
     }
 
     func noteActivity() {
@@ -175,9 +182,10 @@ final class AutoHide {
         }
         if isText {
             lastTextPID = app.processIdentifier
-        } else if app.processIdentifier == lastTextPID, Self.containerRoles.contains(role) {
-            // Electron 等 App 重新渲染时，焦点会在同一个 App 里从输入框短暂落到容器上，不算离开输入框。
-            logOnce("\(appName): focused \(role), ignored (container in same app)")
+        } else if app.processIdentifier == lastTextPID, Self.containerRoles.contains(role),
+                  Date().timeIntervalSince(lastOutsideClick) > 1 {
+            // 没有点击却在同一个 App 里从输入框落到容器上：多半是 Electron 等 App 重新渲染，不算离开输入框。
+            logOnce("\(appName): focused \(role) without click, ignored")
             return nil
         }
         logOnce("\(appName): focused \(role) text=\(isText)")

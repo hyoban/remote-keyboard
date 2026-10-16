@@ -8,6 +8,8 @@ private let detectorLog = Logger(subsystem: "dev.hyoban.remote-keyboard", catego
 final class RemoteDetector {
     /// 输入来源在“远程/本地”之间切换时回调，true 表示远程。
     var onChange: ((Bool) -> Void)?
+    /// 每次鼠标按下时回调，参数是 Quartz 全局坐标（原点在主屏左上角）。
+    var onClick: ((CGPoint) -> Void)?
     private(set) var isRemote: Bool?
 
     private var tap: CFMachPort?
@@ -52,6 +54,7 @@ final class RemoteDetector {
         }
         let pid = pid_t(event.getIntegerValueField(.eventSourceUnixProcessID))
         guard pid != ownPID else { return }
+        if type == .leftMouseDown || type == .rightMouseDown { onClick?(event.location) }
 
         let remote: Bool
         if pid == 0 {

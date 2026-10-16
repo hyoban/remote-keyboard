@@ -35,6 +35,12 @@ final class KeyboardController {
 
     var isVisible: Bool { panel.isVisible }
 
+    /// 判断 Quartz 全局坐标（原点在主屏左上角）是否落在键盘上。
+    func contains(quartzPoint p: CGPoint) -> Bool {
+        guard panel.isVisible, let primary = NSScreen.screens.first else { return false }
+        return panel.frame.contains(NSPoint(x: p.x, y: primary.frame.height - p.y))
+    }
+
     var opacity: CGFloat {
         get { panel.alphaValue }
         set {

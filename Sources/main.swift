@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self, self.remoteOnly else { return }
             remote ? self.controller.show() : self.controller.hide()
         }
+        remoteDetector.onClick = { [weak self] point in self?.autoHide.noteClick(at: point) }
         remoteDetector.start()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.updatePermission(prompt: false)
