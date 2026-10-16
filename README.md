@@ -1,34 +1,34 @@
 # Remote Keyboard
 
-用车机（或任何设备）通过 UU 远程之类的软件控制 Mac 时，车机自带的输入法会挡住大半个画面，而且很多车机也连不了蓝牙键盘。这个仓库包含两个互相独立的 Mac 菜单栏 App，可以只装其中一个，也可以都装：
+When you control a Mac from a car head unit (or any other device) through a remote desktop app like UU Remote, the device's own on-screen keyboard covers most of the remote view, and many head units can't pair a Bluetooth keyboard. This repository contains two independent Mac menu bar apps; install either one or both:
 
-| App | 适合 | 怎么用 |
+| App | Best for | How it works |
 |---|---|---|
-| **屏幕键盘**（`RemoteKeyboard.app`） | 零碎操作、快捷键、终端 | 键盘直接显示在 Mac 屏幕上，在远程画面里点按键 |
-| **Telegram 输入**（`TelegramInput.app`） | 打长句、手机语音输入 | 在手机 Telegram 里给机器人发消息，文字上屏到 Mac |
+| **Remote Keyboard** (`RemoteKeyboard.app`) | Short edits, shortcuts, terminals | A keyboard shown on the Mac's screen that you tap through the remote view |
+| **Telegram Input** (`TelegramInput.app`) | Long sentences, phone dictation | Message a Telegram bot from your phone and the text is typed on the Mac |
 
-两个 App 各自有菜单栏图标、辅助功能权限和开机启动设置，互不依赖。
+Each app has its own menu bar icon, Accessibility permission and launch-at-login setting; neither depends on the other.
 
-## 屏幕键盘
+## Remote Keyboard
 
-直接把键盘放在 Mac 屏幕上，在远程画面里点按键就能打字。
+Puts a keyboard on the Mac's screen so you can type by tapping keys in the remote view.
 
-![68 配列](docs/keyboard.png)
+![68-key layout](docs/keyboard.png)
 
-- **不抢焦点**：键盘是一个不会获得焦点的悬浮面板，点它时正在打字的窗口不受影响。
-- **中文照常用**：键盘发出的是真实的按键，拼音交给 Mac 自己的输入法处理，候选词也是直接点选。“中/EN”键会直接切换 Mac 的输入法，不依赖你设置的切换快捷键。
-- **68 配列**：常见的 65% 机械键盘布局，Mac 键位，数字行、方向键、导航键都在一个面板上。
-- **大按键、可调整**：可以拖动位置、拖左上角 ⤡ 缩放、调不透明度，点右上角 — 收起成小圆点，不挡画面。
-- **不需要手机、网络或配对**：只要远程软件能看到 Mac 屏幕、能点鼠标就行。
-- 纯 Swift，没有第三方依赖。
+- **Never steals focus**: the keyboard is a floating panel that never becomes the key window, so the app you're typing into keeps focus.
+- **Works with input methods**: it sends real key events, so the Mac's own input methods (Pinyin and others) handle composition and you pick candidates on screen. The `EN`/`IME` key switches the Mac's input source directly, independent of your switching shortcut.
+- **68-key layout**: the common 65% mechanical keyboard layout with Mac modifiers; number row, arrows and navigation keys all on one panel.
+- **Large, adjustable keys**: drag to move, drag the ⤡ corner to resize, change opacity, or tap — to collapse it into a small bubble.
+- **No phone, network or pairing**: all it needs is a remote desktop app that shows the Mac's screen and sends clicks.
+- Pure Swift with no third-party dependencies.
 
-## 构建和安装
+## Building and installing
 
 ```bash
 ./build.sh
 ```
 
-这会同时构建 `build/RemoteKeyboard.app` 和 `build/TelegramInput.app`。只要其中一个的话，用 `./build.sh keyboard` 或 `./build.sh telegram`。
+This builds both `build/RemoteKeyboard.app` and `build/TelegramInput.app`. To build only one, run `./build.sh keyboard` or `./build.sh telegram`.
 
 ```bash
 open build/RemoteKeyboard.app
@@ -38,65 +38,65 @@ open build/RemoteKeyboard.app
 open build/TelegramInput.app
 ```
 
-要开机自启的话，先把 App 拖到“应用程序”文件夹，再从它的菜单栏图标里勾选“开机自动启动”。
+To launch at login, move the app to the Applications folder first, then enable **Launch at Login** from its menu bar icon.
 
-### 辅助功能权限
+### Accessibility permission
 
-两个 App 都需要辅助功能权限才能往 Mac 里打字，而且**要分别授权**。第一次启动时 macOS 会请求权限：到 **系统设置 → 隐私与安全性 → 辅助功能**，打开对应 App 的开关。屏幕键盘没授权时，键盘顶部会显示提示，点它就能跳到设置页。
+Both apps need Accessibility access to type on the Mac, and **each must be granted separately**. On first launch macOS asks for it: open **System Settings → Privacy & Security → Accessibility** and turn on the app. While Remote Keyboard lacks access, a notice at the top of the keyboard links to that settings page.
 
-> `build.sh` 按 bundle id 签名，重新构建后权限不会失效。如果你授权过更早的版本，需要在辅助功能列表里把旧条目用“−”删掉再重新添加，只是打开开关不够。
+> `build.sh` signs the apps with a bundle-id requirement, so rebuilding keeps the permission. If you granted access to an earlier build, remove the old entry with "−" and add the app again; turning the switch on is not enough.
 >
-> 排查问题时可以看日志：`/usr/bin/log stream --predicate 'subsystem == "dev.hyoban.remote-keyboard"'`
-> 每次按键都会记下按住时长和手指移动的距离（category `keyboard`），排查误触时很有用。
+> Logs help with troubleshooting: `/usr/bin/log stream --predicate 'subsystem == "dev.hyoban.remote-keyboard"'`
+> Every key press is logged with its hold time and finger movement (category `keyboard`), which is useful for tracking down accidental presses.
 
-## 使用
+## Usage
 
 ```
 esc 1 2 3 4 5 6 7 8 9 0 - =  ⌫⌫   `
 tab  q w e r t y u i o p [ ] \    ⌦
 caps  a s d f g h j k l ; ' ⏎⏎⏎   PgUp
 ⇧⇧⇧   z x c v b n m , . / ⇧⇧  ↑  PgDn
-⌃  ⌥  ⌘  ━━━━ 空格 ━━━━ ⌘ fn 中 ← ↓ →
+⌃  ⌥  ⌘  ━━━━ space ━━━━ ⌘ fn IME ← ↓ →
 ```
 
-- **符号**：数字键和符号键像实体键帽一样显示上下两个字符，按 ⇧ 后打上面那个。
-- **fn 层**：数字行变成 F1–F12，PgUp/PgDn 变成 Home/End。
+- **Symbols**: number and symbol keys show both legends like a physical keycap; with ⇧ active you get the upper one.
+- **fn layer**: the number row becomes F1–F12 and PgUp/PgDn become Home/End.
 
-![fn 层](docs/keyboard-fn.png)
+![fn layer](docs/keyboard-fn.png)
 
-- **caps**：锁定 Shift（不发送真正的 Caps Lock，因为它在 Mac 上常被用来切换中英文）。
-- **中/EN**：右下角这个键直接切换 Mac 的输入法。
-- **修饰键** ⇧ ⌘ ⌥ ⌃ fn：点一下只作用于下一个键，快速点两下锁定（键上出现一条横线），再点一下解除。可以组合任意快捷键，比如 ⌘ → ⇧ → 4 就是截图。
-- **松手才确认**：按下时只高亮按键，松手时才发送，所以按偏了可以滑到正确的键再松手。从按下到松手移动超过 1.5 个键宽会被当作滑动手势，不打字。键与键之间的空隙也算在离得最近的键里。
-- **修饰键自动过期**：点一下的 ⌘ ⌥ ⌃ fn 如果 5 秒内没用掉，会自动取消，免得误触后下一个键变成快捷键。
-- **长按连发**：⌫、⌦ 和方向键按住 0.6 秒后开始自动重复。
-- **仅在远程控制时显示**（默认开启）：App 只读监听输入事件，并根据事件的来源进程判断是远程还是本地操作。通过 UU 远程（以及 ToDesk、向日葵、AnyDesk、TeamViewer、RustDesk、Parsec、屏幕共享）点击时，键盘会出现；你在 Mac 前用真实的鼠标或键盘时，键盘自动隐藏。只在来源切换的那一刻动作。滚轮事件不参与判断，避免和 Mac Mouse Fix 这类工具冲突。第一次启用时，系统可能会请求“输入监控”权限。
-- **自动收起**（菜单栏里设置）：
-  - **进入输入框时展开，离开时收起**（默认开启）：通过辅助功能接口监听前台 App 的焦点变化：进入输入框立即展开，离开 0.6 秒后收起（过滤焦点闪动）。只在焦点切换的那一刻动作，所以手动展开或收起后不会马上被改回去。在同一个 App 里，如果焦点从输入框落到 AXGroup 这类容器上，但前后 1 秒内没有点击（Electron App 重新渲染时常见），不算离开输入框；点了键盘以外的地方，才会收起。为了检测 VS Code、Slack 这类 Electron App 和 Chrome 里的输入框，会为这些 App 打开辅助功能支持（Chrome 需要打开 AXEnhancedUserInterface，个别窗口管理工具的动画可能受影响）。
-  - **自动避开输入框**（默认开启）：键盘挡住当前输入框时，用动画挪到屏幕的另一半（在下半屏就挪到顶部，反之亦然），不挡了或离开输入框后回到原位。矮的输入框按整个输入框判断；编辑器、文档这类很高的输入框，只看光标附近几行。光标移动、换行时都会重新判断。临时挪开的位置不会被记成键盘的新位置，手动拖动才会更新。
-  - **闲置后收起**：15、30 或 60 秒没点键盘就收起成小圆点，默认关闭。
-- **菜单栏图标**：显示/隐藏、收起/展开、大小（屏宽 50%/70%/85%/全宽）、不透明度、重置位置、仅远程时显示、自动收起、自动避开输入框、开机自启、权限状态。
+- **caps** locks Shift. It does not send a real Caps Lock, which macOS often uses to switch input sources.
+- **EN/IME**: the key next to the arrows switches the Mac's input source and shows whether a keyboard layout (`EN`) or an input method (`IME`) is active.
+- **Modifiers** ⇧ ⌘ ⌥ ⌃ fn: one tap applies to the next key, a quick double tap locks it (a bar appears on the key), and another tap releases it. They combine into any shortcut, e.g. ⌘ → ⇧ → 4 takes a screenshot.
+- **Commit on release**: pressing only highlights a key and releasing sends it, so a near miss can slide to the right key before letting go. Moving more than 1.5 key widths between press and release counts as a swipe and types nothing. Gaps between keys belong to the nearest key.
+- **Modifiers expire**: a one-tap ⌘ ⌥ ⌃ fn that isn't used within 5 seconds is cancelled, so a stray tap doesn't turn the next key into a shortcut.
+- **Auto-repeat**: ⌫, ⌦ and the arrows repeat after being held for 0.6 seconds.
+- **Show only during remote control** (on by default): the app listens to input events read-only and uses each event's source process to tell remote from local input. Taps through UU Remote (as well as ToDesk, Sunlogin, AnyDesk, TeamViewer, RustDesk, Parsec and Screen Sharing) show the keyboard; using the Mac's real mouse or keyboard hides it. It only acts when the source changes. Scroll events are ignored to avoid conflicts with tools like Mac Mouse Fix. macOS may ask for Input Monitoring access the first time.
+- **Automatic behavior** (in the menu bar):
+  - **Expand in text inputs, collapse elsewhere** (on by default): watches the frontmost app's focus through the Accessibility API, expanding as soon as focus enters a text input and collapsing 0.6 seconds after it leaves (to filter out flicker). It only acts on focus changes, so manual expanding or collapsing isn't immediately undone. Within one app, focus moving from an input to a container such as `AXGroup` without a click in the surrounding second (common when Electron apps re-render) doesn't count as leaving; a click outside the keyboard does. To see inputs in Electron apps like VS Code and Slack and in Chrome, it turns on accessibility support in those apps (Chrome needs `AXEnhancedUserInterface`, which can affect animations in some window managers).
+  - **Move away from text input** (on by default): when the keyboard covers the focused input, it animates to the other half of the screen (top if it was at the bottom, and vice versa) and returns once it no longer overlaps or focus leaves the input. Short inputs are judged by their whole frame; tall ones like editors and documents only by the lines around the caret. Caret moves and line wraps trigger a re-check. The temporary position is never saved as the keyboard's position; only dragging it yourself changes that.
+  - **Collapse when idle**: collapses to the bubble after 15, 30 or 60 seconds without taps. Off by default.
+- **Menu bar icon**: show/hide, collapse/expand, size (50%/70%/85%/full screen width), opacity, reset position, show only during remote control, the automatic behaviors above, launch at login and permission status.
 
-## Telegram 输入
+## Telegram Input
 
-想打一长段字，或者用手机的语音输入时，可以直接在 Telegram 里发给机器人，文字会上屏到 Mac 当前光标处。Mac 只是主动连 Telegram 的服务器拉取消息，所以不用开端口，也不用组网。它是一个独立的 App，不需要同时运行屏幕键盘。
+For long text or phone dictation, send the text to a Telegram bot and it's typed at the Mac's cursor. The Mac only makes outgoing requests to Telegram's servers, so there are no ports to open and no VPN to set up. It's a standalone app and doesn't need Remote Keyboard running.
 
-1. 在 Telegram 里找 [@BotFather](https://t.me/BotFather)，发送 `/newbot` 创建一个机器人，拿到 token。
-2. 点菜单栏的纸飞机图标 → **设置 bot token…**，粘贴 token。token 存在钥匙串里。
-3. 菜单里会显示一个 6 位配对码，把它发给你的机器人。配对后，机器人只响应你这一个账号。
+1. In Telegram, message [@BotFather](https://t.me/BotFather) and send `/newbot` to create a bot and get its token.
+2. Click the paper plane icon in the menu bar → **Set Bot Token…** and paste the token. It's stored in the Keychain.
+3. The menu shows a 6-digit pairing code; send it to your bot. Once paired, the bot only responds to your account.
 
-使用：
-- **发文字**：上屏到当前光标处。单行直接输入；多行用粘贴的方式上屏，避免中间的换行被当成回车提前发出去。
-- **按钮**：聊天框下方有 ⏎ ⌫ Esc Tab、方向键、⌘C ⌘V ⌘Z ⌘A ⌘Tab ⌘W ⌃C 和“中/EN”。
-- **自动回车**：打开后，每条文字上屏后会再按一次回车，适合聊天、终端这类场景。
-- 上屏成功后，机器人会给你的消息点 👍。超过 2 分钟的消息会被忽略，避免 Mac 重新联网时突然打出一堆字。
-- 菜单栏图标在已连接并配对后变成实心。
-- 注意：机器人聊天不是端到端加密的，不要用它输入密码。
-- 排查问题时可以看日志：`/usr/bin/log stream --predicate 'subsystem == "dev.hyoban.telegram-input"'`
+Usage:
+- **Text** is typed at the cursor. Single lines are typed directly; multi-line text is pasted so newlines don't act as Return and send early.
+- **Buttons** below the chat field send ⏎ ⌫ Esc Tab, the arrows, ⌘C ⌘V ⌘Z ⌘A ⌘Tab ⌘W ⌃C and 🌐 Input (switch input source).
+- **Auto Return** presses Return after each message, handy for chats and terminals.
+- The bot reacts with 👍 once the text is typed. Messages older than 2 minutes are ignored, so reconnecting doesn't suddenly type a backlog.
+- The menu bar icon turns solid once connected and paired.
+- Bot chats aren't end-to-end encrypted, so don't use it for passwords.
+- Logs help with troubleshooting: `/usr/bin/log stream --predicate 'subsystem == "dev.hyoban.telegram-input"'`
 
-## 截图
+## Screenshots
 
-`docs/` 里的图是用下面的命令生成的，不会弹出窗口：
+The images in `docs/` are rendered with this command, which doesn't open any window:
 
 ```bash
 build/RemoteKeyboard.app/Contents/MacOS/RemoteKeyboard --snapshot docs

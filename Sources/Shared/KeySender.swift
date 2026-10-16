@@ -1,7 +1,7 @@
 import AppKit
 import Carbon
 
-/// ANSI 键盘布局下的虚拟键码。
+/// Virtual key codes for the ANSI layout.
 let keyCodes: [String: CGKeyCode] = [
     "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
     "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
@@ -19,12 +19,12 @@ let keyCodes: [String: CGKeyCode] = [
 private let arrowKeys: Set<CGKeyCode> = [123, 124, 125, 126]
 private let navigationKeys: Set<CGKeyCode> = [115, 119, 116, 121, 117, 122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
 
-/// 把按键作为系统键盘事件发给当前获得焦点的 App。
-/// 发的是键码而不是字符，所以 Mac 自己的输入法（拼音等）会照常工作。
+/// Posts keys as system keyboard events to the focused app.
+/// It sends key codes rather than characters, so the Mac's own input methods keep working.
 enum KeySender {
     private static let source = CGEventSource(stateID: .hidSystemState)
 
-    /// 用辅助功能信任作为唯一的权限：它同时覆盖发送按键和读取焦点元素。
+    /// Accessibility trust is the only permission needed: it covers both posting keys and reading the focused element.
     static var hasPermission: Bool { AXIsProcessTrusted() }
 
     static func press(_ code: CGKeyCode, flags: CGEventFlags) {
@@ -44,8 +44,8 @@ enum KeySender {
         up.post(tap: .cghidEventTap)
     }
 
-    /// 把一整段文字上屏到当前光标位置（Telegram 发来的消息用这个）。
-    /// 单行直接注入 Unicode 字符；多行用粘贴，避免换行被当成回车把消息提前发出去。
+    /// Types a whole piece of text at the cursor (used for Telegram messages).
+    /// Single lines are injected as Unicode; multi-line text is pasted so newlines don't act as Return and send early.
     static func type(_ text: String) {
         if text.contains("\n") {
             paste(text)
@@ -78,7 +78,7 @@ enum KeySender {
     private static var savedPasteboard: [NSPasteboardItem]?
     private static var restoreWork: DispatchWorkItem?
 
-    /// 剪贴板 + ⌘V，粘贴后恢复原来的剪贴板内容。
+    /// Clipboard + ⌘V, restoring the previous clipboard contents afterwards.
     private static func paste(_ text: String) {
         let pb = NSPasteboard.general
         if savedPasteboard == nil {
@@ -106,7 +106,7 @@ enum KeySender {
     }
 }
 
-/// 切换 Mac 的输入法（中/英），不依赖用户设置的切换快捷键。
+/// Switches the Mac's input source without relying on the user's switching shortcut.
 enum InputSources {
     static func enabled() -> [TISInputSource] {
         let filter = [
@@ -134,7 +134,7 @@ enum InputSources {
         TISSelectInputSource(list[(index + 1) % list.count])
     }
 
-    /// 当前是中文等输入法时，临时切到英文键盘布局再执行，避免输入法截获注入的字符。
+    /// When an input method (e.g. Pinyin) is active, temporarily switch to an ASCII layout so it can't intercept injected characters.
     static func withKeyboardLayout(_ body: () -> Void) {
         guard let current = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
               property(current, kTISPropertyInputSourceType) != (kTISTypeKeyboardLayout as String),
@@ -150,10 +150,10 @@ enum InputSources {
         TISSelectInputSource(current)
     }
 
-    /// 当前输入法的简短标识：键盘布局显示 "EN"，输入法显示 "中"。
+    /// Short label for the current input source: "EN" for a keyboard layout, "IME" for an input method.
     static func shortLabel() -> String {
         guard let current = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else { return "EN" }
         let type = property(current, kTISPropertyInputSourceType) ?? ""
-        return type == (kTISTypeKeyboardLayout as String) ? "EN" : "中"
+        return type == (kTISTypeKeyboardLayout as String) ? "EN" : "IME"
     }
 }

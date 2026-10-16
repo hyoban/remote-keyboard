@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         telegram.start()
     }
 
-    // MARK: 菜单栏
+    // MARK: Menu bar
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -22,27 +22,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    /// 已连接并配对时显示实心图标，其他状态显示空心图标。
+    /// Filled icon when connected and paired, outlined otherwise.
     private func updateIcon() {
         let ready: Bool
         if case .connected = telegram.status { ready = true } else { ready = false }
         statusItem?.button?.image = NSImage(systemSymbolName: ready ? "paperplane.fill" : "paperplane",
-                                            accessibilityDescription: "Telegram 输入")
+                                            accessibilityDescription: "Telegram Input")
     }
 
-    /// 菜单栏 App 默认没有“编辑”菜单，加上它，设置对话框里才能用 ⌘V 粘贴 token。
+    /// Menu bar apps have no Edit menu by default; without it ⌘V can't paste the token into the dialog.
     private func setUpEditMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
         appItem.submenu = NSMenu()
         main.addItem(appItem)
         let editItem = NSMenuItem()
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         main.addItem(editItem)
         NSApp.mainMenu = main
@@ -53,46 +53,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let statusText: String
         switch telegram.status {
-        case .notConfigured: statusText = telegram.enabled ? "未设置 bot token" : "已关闭"
-        case .connecting: statusText = "连接中…"
-        case .waitingForPairing: statusText = "等待配对：给 @\(telegram.botUsername ?? "bot") 发送 \(telegram.pairingCode)"
-        case .connected: statusText = "已连接 @\(telegram.botUsername ?? "bot")"
-        case .error(let message): statusText = "错误：\(message)"
+        case .notConfigured: statusText = telegram.enabled ? "Bot token not set" : "Off"
+        case .connecting: statusText = "Connecting…"
+        case .waitingForPairing: statusText = "Waiting to pair: send \(telegram.pairingCode) to @\(telegram.botUsername ?? "bot")"
+        case .connected: statusText = "Connected as @\(telegram.botUsername ?? "bot")"
+        case .error(let message): statusText = "Error: \(message)"
         }
         let status = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
         menu.addItem(.separator())
 
-        menu.addItem(item(telegram.isConfigured ? "更换 bot token…" : "设置 bot token…", #selector(configure)))
+        menu.addItem(item(telegram.isConfigured ? "Change Bot Token…" : "Set Bot Token…", #selector(configure)))
         if telegram.botUsername != nil {
-            menu.addItem(item("打开机器人对话", #selector(openBotChat)))
+            menu.addItem(item("Open Bot Chat", #selector(openBotChat)))
         }
         if case .waitingForPairing = telegram.status {
-            menu.addItem(item("拷贝配对码", #selector(copyPairingCode)))
+            menu.addItem(item("Copy Pairing Code", #selector(copyPairingCode)))
         }
         if telegram.isPaired {
-            menu.addItem(item("解除配对", #selector(unpair)))
+            menu.addItem(item("Unpair", #selector(unpair)))
         }
-        let enabled = item("启用", #selector(toggleEnabled))
+        let enabled = item("Enabled", #selector(toggleEnabled))
         enabled.state = telegram.enabled ? .on : .off
         menu.addItem(enabled)
         menu.addItem(.separator())
 
-        let login = item("开机自动启动", #selector(toggleLaunchAtLogin))
+        let login = item("Launch at Login", #selector(toggleLaunchAtLogin))
         login.state = AppSupport.launchAtLogin ? .on : .off
         menu.addItem(login)
 
         if KeySender.hasPermission {
-            let ok = NSMenuItem(title: "辅助功能权限：已授权", action: nil, keyEquivalent: "")
+            let ok = NSMenuItem(title: "Accessibility Access: Granted", action: nil, keyEquivalent: "")
             ok.isEnabled = false
             menu.addItem(ok)
         } else {
-            menu.addItem(item("辅助功能权限：未授权，点击去设置…", #selector(openAccessibilitySettings)))
+            menu.addItem(item("Accessibility Access: Not Granted, Open Settings…", #selector(openAccessibilitySettings)))
         }
 
         menu.addItem(.separator())
-        menu.addItem(item("退出", #selector(quit), key: "q"))
+        menu.addItem(item("Quit", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -104,17 +104,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func configure() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "设置 Telegram 机器人"
+        alert.messageText = "Set Up Telegram Bot"
         alert.informativeText = """
-        1. 在 Telegram 里找 @BotFather，发送 /newbot 创建一个机器人
-        2. 把它回复的 token 粘贴到下面
-        3. 保存后，把菜单里显示的 6 位配对码发给你的机器人
+        1. In Telegram, message @BotFather and send /newbot to create a bot
+        2. Paste the token it replies with below
+        3. After saving, send the 6-digit pairing code from the menu to your bot
         """
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-        field.placeholderString = telegram.isConfigured ? "已设置，粘贴新的 token 可替换" : "123456789:ABCdef..."
+        field.placeholderString = telegram.isConfigured ? "Already set; paste a new token to replace it" : "123456789:ABCdef..."
         alert.accessoryView = field
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let token = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

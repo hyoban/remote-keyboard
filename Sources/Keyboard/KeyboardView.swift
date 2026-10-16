@@ -3,7 +3,7 @@ import os
 
 private let keyLog = Logger(subsystem: "dev.hyoban.remote-keyboard", category: "keyboard")
 
-/// 修饰键状态：点一下只作用于下一个键，快速点两下锁定，再点一下解除。
+/// Modifier state: one tap applies to the next key, a quick double tap locks, another tap releases.
 final class ModifierState {
     enum Level { case off, once, locked }
 
@@ -34,8 +34,8 @@ final class ModifierState {
         levels[m] = level(m) == .locked ? .off : .locked
     }
 
-    /// 误触点亮的一次性修饰键超过一段时间没用掉就取消，免得下一次按键意外变成快捷键。
-    /// 返回是否有修饰键被取消。
+    /// Cancels one-shot modifiers that went unused for a while (often accidental taps), so the next key
+    /// doesn't unexpectedly become a shortcut. Returns whether anything was cancelled.
     func expireOnce(olderThan seconds: TimeInterval) -> Bool {
         var changed = false
         for (m, l) in levels where l == .once {
@@ -77,7 +77,7 @@ final class KeyboardView: NSView {
     private var pressed: (row: Int, col: Int)?
     private var repeatDelay: Timer?
     private var repeatTimer: Timer?
-    /// 当前这次按压：按下的位置和时间、是否已经开始连发。
+    /// The current press: where and when it started, and whether auto-repeat has begun.
     private var touch: (start: NSPoint, time: Date, repeating: Bool)?
     private var lastRelease: (point: NSPoint, time: Date)?
     private var modifierExpiry: Timer?
@@ -86,7 +86,7 @@ final class KeyboardView: NSView {
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    // MARK: 布局
+    // MARK: Layout
 
     private struct Metrics {
         var pad: CGFloat
@@ -136,7 +136,7 @@ final class KeyboardView: NSView {
         return NSRect(x: r.maxX + 6, y: 0, width: bounds.width * 0.3, height: r.height)
     }
 
-    // MARK: 绘制
+    // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         Palette.background.setFill()
@@ -151,7 +151,7 @@ final class KeyboardView: NSView {
         let m = metrics
         let t = m.topHeight
 
-        // 中间的拖动条
+        // Drag handle in the middle
         Palette.muted.setFill()
         let grip = NSRect(x: bounds.midX - t * 1.2, y: t * 0.42, width: t * 2.4, height: max(3, t * 0.16))
         NSBezierPath(roundedRect: grip, xRadius: grip.height / 2, yRadius: grip.height / 2).fill()
@@ -160,7 +160,7 @@ final class KeyboardView: NSView {
         drawText("—", in: collapseRect, size: t * 0.55, color: Palette.muted)
 
         if !hasPermission {
-            drawText("⚠︎ 未授权辅助功能，点这里", in: warningRect, size: t * 0.45,
+            drawText("⚠︎ Accessibility access needed, click here", in: warningRect, size: t * 0.45,
                      color: Palette.warning, alignment: .left)
         }
     }
@@ -217,7 +217,7 @@ final class KeyboardView: NSView {
         default: size = base * 0.56
         }
         if let secondary {
-            // 像实体键帽一样：上方小字，下方主字符。
+            // Like a physical keycap: small legend on top, main character below.
             let top = NSRect(x: rect.minX, y: rect.minY + rect.height * 0.08, width: rect.width, height: rect.height * 0.38)
             let bottom = NSRect(x: rect.minX, y: rect.minY + rect.height * 0.4, width: rect.width, height: rect.height * 0.5)
             drawText(secondary, in: top, size: base * 0.55, color: Palette.secondaryText)
@@ -241,7 +241,7 @@ final class KeyboardView: NSView {
         str.draw(in: NSRect(x: rect.minX, y: rect.midY - h / 2, width: rect.width, height: h))
     }
 
-    // MARK: 交互
+    // MARK: Interaction
 
     override func mouseDown(with event: NSEvent) {
         onActivity?()
@@ -258,14 +258,14 @@ final class KeyboardView: NSView {
             }
             return
         }
-        // 远控软件偶尔会重复发送同一次点击，同一位置 60ms 内的第二次按下直接忽略。
+        // Remote desktop apps occasionally send a click twice; ignore a second press at the same spot within 60ms.
         if let last = lastRelease, Date().timeIntervalSince(last.time) < 0.06,
            hypot(p.x - last.point.x, p.y - last.point.y) < 4 {
             keyLog.notice("ignored duplicate press")
             return
         }
         guard let hit = key(at: p) else { return }
-        // 按下时只高亮，松手时才确认（可以滑到正确的键再松手）。
+        // Highlight on press and commit on release, so a near miss can slide to the right key.
         pressed = (hit.row, hit.col)
         touch = (p, Date(), false)
         if hit.def.repeats {
@@ -277,7 +277,7 @@ final class KeyboardView: NSView {
         needsDisplay = true
     }
 
-    /// 按住可连发的键超过 0.6 秒：先触发一次，然后每 60ms 重复。
+    /// A repeatable key held for 0.6s fires once, then repeats every 60ms.
     private func startRepeating() {
         guard var t = touch, let pressed,
               let k = keyFrames().first(where: { $0.row == pressed.row && $0.col == pressed.col }),
@@ -292,7 +292,7 @@ final class KeyboardView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         if let start = resizeStart, let window {
-            // 拖左上角缩放，右下角固定，保持宽高比。
+            // Resize from the top left corner, keeping the bottom right fixed and the aspect ratio.
             let dx = NSEvent.mouseLocation.x - start.mouse.x
             let maxWidth = window.screen?.visibleFrame.width ?? 3000
             let width = min(max(start.frame.width - dx, minWidth), maxWidth)
@@ -302,7 +302,7 @@ final class KeyboardView: NSView {
             return
         }
         guard let t = touch, !t.repeating else { return }
-        // 手指滑动时，高亮跟着走到手指下面的键；滑得太远就当作手势，取消高亮。
+        // While sliding, the highlight follows the key under the finger; sliding too far is a gesture and clears it.
         let p = convert(event.locationInWindow, from: nil)
         let next = moved(from: t.start, to: p) ? nil : key(at: p).map { ($0.row, $0.col) }
         if next?.0 != pressed?.row || next?.1 != pressed?.col {
@@ -338,12 +338,12 @@ final class KeyboardView: NSView {
         needsDisplay = true
     }
 
-    /// 从按下到松手移动超过 1.5 个键宽，就是滑动手势而不是按键。
+    /// Moving more than 1.5 key widths between press and release is a gesture, not a key press.
     private func moved(from a: NSPoint, to b: NSPoint) -> Bool {
         hypot(b.x - a.x, b.y - a.y) > metrics.unit * 1.5
     }
 
-    /// 按整格判断点中了哪个键（键之间的空隙也算），点在两个键中间就算离它最近的那个。
+    /// Hit-tests whole cells, gaps included, so a tap between two keys goes to the nearest one.
     private func key(at p: NSPoint) -> (row: Int, col: Int, def: KeyDef, rect: NSRect)? {
         guard p.y >= metrics.topHeight else { return nil }
         let gap = metrics.gap
@@ -359,7 +359,7 @@ final class KeyboardView: NSView {
         }
     }
 
-    /// 执行按键，返回用于长按连发的闭包（连发时沿用第一次按下时的修饰键）。
+    /// Performs a key and returns a closure for auto-repeat (repeats reuse the modifiers of the first press).
     private func activate(_ def: KeyDef) -> (() -> Void)? {
         let action = mods.level(.fn) != .off ? def.fnAction ?? def.action : def.action
         switch action {
@@ -386,7 +386,7 @@ final class KeyboardView: NSView {
     }
 }
 
-/// 收起后的小圆点：点击展开，拖动移动位置。
+/// The collapsed bubble: click to expand, drag to move.
 final class BubbleView: NSView {
     var onTap: (() -> Void)?
     private var dragStart: (mouse: NSPoint, origin: NSPoint)?
@@ -399,7 +399,7 @@ final class BubbleView: NSView {
         NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill()
         let config = NSImage.SymbolConfiguration(pointSize: bounds.width * 0.38, weight: .regular)
             .applying(.init(paletteColors: [Palette.text]))
-        if let img = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "展开键盘")?
+        if let img = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "Expand keyboard")?
             .withSymbolConfiguration(config) {
             let s = img.size
             img.draw(in: NSRect(x: bounds.midX - s.width / 2, y: bounds.midY - s.height / 2,

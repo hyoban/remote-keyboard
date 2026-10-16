@@ -4,8 +4,8 @@ import os
 
 private let tgLog = Logger(subsystem: "dev.hyoban.telegram-input", category: "bot")
 
-/// Telegram 机器人：在手机 Telegram 里给它发消息，文字会上屏到 Mac 当前光标处。
-/// Mac 主动长轮询 Telegram 服务器，不需要开端口或组网。只响应配对过的那一个账号。
+/// Telegram bot: messages sent to it from the phone are typed at the Mac's cursor.
+/// The Mac long-polls Telegram, so no open ports or VPN are needed. Only the paired account is served.
 final class TelegramBot {
     enum Status {
         case notConfigured
@@ -19,10 +19,11 @@ final class TelegramBot {
     private(set) var botUsername: String?
     var onStatusChange: (() -> Void)?
 
-    // 测试用环境变量：RK_TG_API（API 地址）、RK_TG_TOKEN、RK_TG_PAIRING_CODE、RK_DRY_RUN（只记录不注入）。
+    // Environment overrides for testing: RK_TG_API (API base URL), RK_TG_TOKEN, RK_TG_PAIRING_CODE,
+    // RK_DRY_RUN (log instead of typing).
     private static let env = ProcessInfo.processInfo.environment
 
-    /// 每次启动随机生成；未配对时把它发给机器人即可绑定账号。
+    /// Random on every launch; sending it to the bot while unpaired binds that account.
     private(set) var pairingCode = TelegramBot.env["RK_TG_PAIRING_CODE"] ?? TelegramBot.makePairingCode()
 
     private let defaults = UserDefaults.standard
@@ -35,7 +36,7 @@ final class TelegramBot {
     }()
     private var token: String?
     private var offset = 0
-    /// 每次重启轮询都加一，旧的轮询看到编号变了就自行结束。
+    /// Incremented on every restart; an older polling loop stops once it sees a newer generation.
     private var generation = 0
 
     var enabled: Bool {
@@ -110,7 +111,7 @@ final class TelegramBot {
         status = isPaired ? .connected : .waitingForPairing
     }
 
-    // MARK: 轮询
+    // MARK: Polling
 
     private func poll(_ gen: Int) {
         guard gen == generation, let token else { return }
@@ -147,9 +148,9 @@ final class TelegramBot {
                 allowedUserID = userID
                 tgLog.notice("paired with user \(userID)")
                 refreshStatus()
-                send(chatID, "✅ 配对成功。现在发给我的文字会直接打到 Mac 当前的光标位置，下面的按钮可以发送按键。", keyboard: true)
+                send(chatID, "✅ Paired. Text you send me is typed at the Mac's cursor, and the buttons below send keys.", keyboard: true)
             } else {
-                send(chatID, "请发送 Mac 菜单栏「Telegram 输入」里显示的 6 位配对码。")
+                send(chatID, "Send the 6-digit pairing code shown in the Telegram Input menu on your Mac.")
             }
             return
         }
@@ -157,23 +158,23 @@ final class TelegramBot {
             tgLog.notice("ignored message from user \(userID)")
             return
         }
-        // Mac 离线期间积压的消息不再执行，免得重新联网时突然打出一堆字。
+        // Skip messages queued while the Mac was offline, so reconnecting doesn't suddenly type a pile of text.
         if let date = message["date"] as? Int, Date().timeIntervalSince1970 - Double(date) > 120 {
-            send(chatID, "这条消息发送超过 2 分钟了，已忽略。", replyTo: messageID)
+            send(chatID, "Ignored: this message is more than 2 minutes old.", replyTo: messageID)
             return
         }
 
         if text == "/start" || text == "/keyboard" {
-            send(chatID, "发文字：上屏到 Mac 当前光标处。\n按钮：发送对应按键。\n「自动回车」打开后，每条文字上屏后会再按一次回车。", keyboard: true)
+            send(chatID, "Text: typed at the Mac's cursor.\nButtons: send the matching key.\nWith Auto Return on, Return is pressed after each message.", keyboard: true)
             return
         }
         if text == Self.autoReturnLabel(true) || text == Self.autoReturnLabel(false) {
             autoReturn.toggle()
-            send(chatID, autoReturn ? "已开启自动回车。" : "已关闭自动回车。", keyboard: true)
+            send(chatID, autoReturn ? "Auto Return is on." : "Auto Return is off.", keyboard: true)
             return
         }
         guard AXIsProcessTrusted() else {
-            send(chatID, "⚠️ Mac 上的「Telegram 输入」还没有辅助功能权限，没法打字。", replyTo: messageID)
+            send(chatID, "⚠️ Telegram Input on the Mac doesn't have Accessibility access yet, so it can't type.", replyTo: messageID)
             return
         }
 
@@ -185,7 +186,7 @@ final class TelegramBot {
             if !dryRun {
                 KeySender.type(text)
                 if autoReturn {
-                    // 等粘贴或输入完成后再回车。
+                    // Press Return once typing or pasting has finished.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                         KeySender.press(keyCodes["return"]!, flags: [])
                     }
@@ -198,7 +199,7 @@ final class TelegramBot {
         ], token: token ?? "") { _ in }
     }
 
-    // MARK: 按钮
+    // MARK: Buttons
 
     private static func key(_ name: String, _ flags: CGEventFlags = []) -> () -> Void {
         { KeySender.press(keyCodes[name]!, flags: flags) }
@@ -210,24 +211,24 @@ final class TelegramBot {
         "⌘C": key("c", .maskCommand), "⌘V": key("v", .maskCommand),
         "⌘Z": key("z", .maskCommand), "⌘A": key("a", .maskCommand),
         "⌘Tab": key("tab", .maskCommand), "⌘W": key("w", .maskCommand),
-        "⌃C": key("c", .maskControl), "中/EN": { InputSources.selectNext() },
+        "⌃C": key("c", .maskControl), "🌐 Input": { InputSources.selectNext() },
     ]
 
-    private static func autoReturnLabel(_ on: Bool) -> String { on ? "自动回车：开" : "自动回车：关" }
+    private static func autoReturnLabel(_ on: Bool) -> String { on ? "Auto Return: On" : "Auto Return: Off" }
 
     private func keyboardMarkup() -> [String: Any] {
         let rows = [
             ["⏎", "⌫", "⎋ Esc", "⇥ Tab"],
             ["←", "↑", "↓", "→"],
             ["⌘C", "⌘V", "⌘Z", "⌘A"],
-            ["⌘Tab", "⌘W", "⌃C", "中/EN"],
+            ["⌘Tab", "⌘W", "⌃C", "🌐 Input"],
             [Self.autoReturnLabel(autoReturn)],
         ]
         return [
             "keyboard": rows.map { $0.map { ["text": $0] } },
             "resize_keyboard": true,
             "is_persistent": true,
-            "input_field_placeholder": "输入要发到 Mac 的文字",
+            "input_field_placeholder": "Text to type on the Mac",
         ]
     }
 
@@ -247,7 +248,7 @@ final class TelegramBot {
     private func call(_ method: String, _ params: [String: Any], token: String,
                       completion: @escaping (Result<Any, Error>) -> Void) {
         guard let url = URL(string: "\(apiBase)/bot\(token)/\(method)") else {
-            completion(.failure(BotError("无效的 token")))
+            completion(.failure(BotError("Invalid token")))
             return
         }
         var request = URLRequest(url: url)
@@ -263,10 +264,10 @@ final class TelegramBot {
                 if json["ok"] as? Bool == true {
                     result = .success(json["result"] ?? NSNull())
                 } else {
-                    result = .failure(BotError(json["description"] as? String ?? "未知错误"))
+                    result = .failure(BotError(json["description"] as? String ?? "Unknown error"))
                 }
             } else {
-                result = .failure(BotError("无法解析 Telegram 的响应"))
+                result = .failure(BotError("Couldn't parse Telegram's response"))
             }
             DispatchQueue.main.async { completion(result) }
         }.resume()
@@ -283,7 +284,7 @@ struct BotError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// bot token 存在钥匙串里，不写进普通的偏好设置文件。
+/// The bot token lives in the Keychain rather than in the preferences file.
 private enum Keychain {
     private static let base: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,

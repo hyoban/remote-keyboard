@@ -3,12 +3,13 @@ import os
 
 private let detectorLog = Logger(subsystem: "dev.hyoban.remote-keyboard", category: "remote")
 
-/// 只读监听鼠标和键盘事件，判断当前是在远程控制还是本地操作：
-/// 真实硬件输入的来源 PID 是 0，远程控制软件注入的事件带着它自己的 PID（如 UU 远程的 UURemoteServer）。
+/// Listens (read-only) to mouse and keyboard events to tell remote control from local use:
+/// hardware input has source PID 0, while remote desktop apps post events under their own PID
+/// (e.g. UU Remote's UURemoteServer).
 final class RemoteDetector {
-    /// 输入来源在“远程/本地”之间切换时回调，true 表示远程。
+    /// Called when the input source switches between remote and local; true means remote.
     var onChange: ((Bool) -> Void)?
-    /// 每次鼠标按下时回调，参数是 Quartz 全局坐标（原点在主屏左上角）。
+    /// Called on every mouse down with the Quartz global location (origin at the top left of the main screen).
     var onClick: ((CGPoint) -> Void)?
     private(set) var isRemote: Bool?
 
@@ -16,7 +17,7 @@ final class RemoteDetector {
     private let ownPID = getpid()
     private var loggedUnknown: Set<pid_t> = []
 
-    /// 常见远程控制软件注入事件的进程名（小写匹配）。
+    /// Process names (lowercase substrings) of common remote desktop apps that post events.
     private static let remoteProcessKeywords = [
         "uuremote", "todesk", "sunlogin", "anydesk", "teamviewer", "rustdesk", "parsec",
         "screensharingd", "ardagent",
@@ -25,7 +26,7 @@ final class RemoteDetector {
     func start() {
         guard tap == nil else { return }
         if !CGPreflightListenEventAccess() { CGRequestListenEventAccess() }
-        // 不监听滚轮：Mac Mouse Fix 这类工具会改写滚轮事件，容易误判。
+        // Scroll wheel events are ignored: tools like Mac Mouse Fix rewrite them and would cause false positives.
         let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .mouseMoved, .leftMouseDragged, .keyDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, refcon in
@@ -63,7 +64,7 @@ final class RemoteDetector {
             let name = Self.processName(pid)
             let lower = name.lowercased()
             guard Self.remoteProcessKeywords.contains(where: lower.contains) else {
-                // 其他工具注入的事件（键位映射、自动化脚本等）不参与判断。
+                // Events posted by other tools (key remappers, automation scripts) don't count.
                 if loggedUnknown.insert(pid).inserted {
                     detectorLog.notice("ignoring events from pid=\(pid) \(name, privacy: .public)")
                 }

@@ -1,13 +1,13 @@
 #!/bin/sh
-# 构建两个独立的菜单栏 App：
-#   build/RemoteKeyboard.app  屏幕键盘
-#   build/TelegramInput.app   Telegram 输入
-# 只构建其中一个：./build.sh keyboard 或 ./build.sh telegram
+# Builds two independent menu bar apps:
+#   build/RemoteKeyboard.app  on-screen keyboard
+#   build/TelegramInput.app   Telegram input
+# Build just one with ./build.sh keyboard or ./build.sh telegram
 set -e
 cd "$(dirname "$0")"
 mkdir -p build
 
-# build_app <可执行文件名> <bundle id> <显示名> <源码目录>
+# build_app <executable name> <bundle id> <display name> <source dir>
 build_app() {
   name=$1 id=$2 display=$3 dir=$4
   app="build/$name.app"
@@ -34,16 +34,16 @@ build_app() {
 </plist>
 EOF
 
-  # 用 bundle id 作为签名要求，而不是默认的二进制哈希，
-  # 这样重新构建后 macOS 仍认为是同一个 App，辅助功能权限不会失效。
+  # Sign with a bundle-id requirement instead of the default binary hash, so macOS still treats a
+  # rebuild as the same app and the Accessibility grant survives.
   codesign --force --sign - --identifier "$id" -r="designated => identifier \"$id\"" "$app"
-  echo "构建完成: $app"
+  echo "Built $app"
 }
 
 target=${1:-all}
 if [ "$target" = all ] || [ "$target" = keyboard ]; then
-  build_app RemoteKeyboard dev.hyoban.remote-keyboard "屏幕键盘" Sources/Keyboard
+  build_app RemoteKeyboard dev.hyoban.remote-keyboard "Remote Keyboard" Sources/Keyboard
 fi
 if [ "$target" = all ] || [ "$target" = telegram ]; then
-  build_app TelegramInput dev.hyoban.telegram-input "Telegram 输入" Sources/TelegramInput
+  build_app TelegramInput dev.hyoban.telegram-input "Telegram Input" Sources/TelegramInput
 fi

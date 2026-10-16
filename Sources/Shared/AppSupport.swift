@@ -1,7 +1,7 @@
 import AppKit
 import ServiceManagement
 
-/// 两个 App 共用的系统相关小功能。
+/// Small system helpers shared by both apps.
 enum AppSupport {
     static func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
@@ -20,8 +20,8 @@ enum AppSupport {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = "设置开机启动失败"
-            alert.informativeText = "\(error.localizedDescription)\n请先把 App 拖到“应用程序”文件夹再试。"
+            alert.messageText = "Couldn't change launch at login"
+            alert.informativeText = "\(error.localizedDescription)\nMove the app to the Applications folder and try again."
             alert.runModal()
         }
     }

@@ -1,13 +1,13 @@
 import AppKit
 
-/// 不会成为焦点窗口的悬浮面板：点它的时候，正在打字的 App 不会失去焦点。
+/// A floating panel that never becomes key, so clicking it doesn't take focus from the app being typed into.
 final class KeyboardPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(contentRect: contentRect, styleMask: [.nonactivatingPanel, .borderless],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
         level = .floating
-        // transient：所有桌面都显示，进入调度中心（Mission Control）时自动隐藏。
+        // transient: shown on every Space and hidden while Mission Control is open.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
@@ -28,19 +28,19 @@ final class KeyboardController {
     private let bubble = BubbleView()
     private let panel: KeyboardPanel
     private(set) var collapsed = false
-    /// 用户放置的位置（“家”）。自动避让只是临时挪开，不会改它。
+    /// Where the user placed the keyboard ("home"). Avoidance only moves it temporarily and never changes this.
     private var expandedFrame: NSRect
-    /// 正在避让输入框时的临时位置；nil 表示在用户放的位置。
+    /// Temporary frame while avoiding a text input; nil when at home.
     private(set) var avoidFrame: NSRect?
-    /// 代码自己移动窗口时为 true，这时的移动不记成用户的新位置。
+    /// True while the code moves the window, so the move isn't saved as the user's new position.
     private var movingProgrammatically = false
     private let defaults = UserDefaults.standard
-    /// 布局改成 68 配列后宽高比变了，换个 key 让旧的窗口尺寸失效。
+    /// The aspect ratio changed with the 68-key layout; a new key discards old window sizes.
     private let frameKey = "frame.68"
 
     var isVisible: Bool { panel.isVisible }
 
-    /// 判断 Quartz 全局坐标（原点在主屏左上角）是否落在键盘上。
+    /// Whether a Quartz global point (origin at the top left of the main screen) is on the keyboard.
     func contains(quartzPoint p: CGPoint) -> Bool {
         guard panel.isVisible, let primary = NSScreen.screens.first else { return false }
         return panel.frame.contains(NSPoint(x: p.x, y: primary.frame.height - p.y))
@@ -103,7 +103,7 @@ final class KeyboardController {
 
     func expand() {
         guard collapsed else { return }
-        // 键盘右下角对齐到小圆点当前的位置。
+        // Align the keyboard's bottom right corner with the bubble.
         let b = panel.frame
         var f = expandedFrame
         f.origin = NSPoint(x: b.maxX - f.width, y: b.minY)
@@ -113,7 +113,7 @@ final class KeyboardController {
         defaults.set(false, forKey: "collapsed")
     }
 
-    /// 按屏幕宽度的比例设置大小，保持底边中点不动。
+    /// Sizes the keyboard to a fraction of the screen width, keeping the bottom center fixed.
     func setWidth(fraction: CGFloat) {
         if collapsed { expand() }
         let vf = panel.screen?.visibleFrame ?? Self.defaultFrame()
@@ -128,7 +128,8 @@ final class KeyboardController {
         panel.setFrame(Self.defaultFrame(), display: true)
     }
 
-    /// 让键盘避开 target（Cocoa 坐标）：挡住时挪到屏幕另一半，不挡了就回到原位。
+    /// Keeps the keyboard clear of target (Cocoa coordinates): moves to the other half of the screen when it
+    /// overlaps, and back home when it no longer does.
     func avoid(_ target: NSRect?) {
         guard !collapsed, panel.isVisible else { return }
         let home = expandedFrame
@@ -148,7 +149,7 @@ final class KeyboardController {
             let i = r.intersection(target)
             return i.isNull ? 0 : i.width * i.height
         }
-        // 挪过去挡得更少才挪。
+        // Only move if the other position overlaps less.
         let best = overlap(alternate) < overlap(home) ? alternate : home
         if best == home {
             if avoidFrame != nil {
@@ -169,7 +170,7 @@ final class KeyboardController {
 
     private func saveFrame() {
         guard !collapsed, !movingProgrammatically else { return }
-        // 用户自己拖动或缩放了键盘：这就是新的位置，不再处于避让状态。
+        // The user dragged or resized the keyboard: this is the new home, and we're no longer avoiding.
         avoidFrame = nil
         expandedFrame = panel.frame
         defaults.set(NSStringFromRect(expandedFrame), forKey: frameKey)

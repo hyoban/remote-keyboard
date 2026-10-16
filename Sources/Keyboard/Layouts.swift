@@ -3,7 +3,7 @@ import AppKit
 enum Modifier: CaseIterable {
     case shift, cmd, alt, ctrl, fn
 
-    /// fn 只切换键盘层，不附加到发出的按键事件上。
+    /// fn only switches the key layer; it is not added to posted events.
     var flag: CGEventFlags {
         switch self {
         case .shift: return .maskShift
@@ -27,10 +27,10 @@ enum Modifier: CaseIterable {
 
 enum KeyAction {
     case char(code: CGKeyCode)
-    /// 固定按键或组合键，如 Esc、方向键、F1。
+    /// A fixed key or combination, such as Esc, arrows or F1.
     case key(code: CGKeyCode, flags: CGEventFlags)
     case modifier(Modifier)
-    /// 锁定 Shift。不发送真正的 Caps Lock，因为在 Mac 上它常被用来切换中英文。
+    /// Locks Shift. A real Caps Lock is not sent because macOS often uses it to switch input sources.
     case capsLock
     case inputSource
 }
@@ -41,14 +41,14 @@ enum KeyStyle {
 
 struct KeyDef {
     var label: String
-    /// 数字和符号键上方的字符，如 "1" 上的 "!"。
+    /// The shifted legend shown above number and symbol keys, e.g. "!" on "1".
     var shiftedLabel: String? = nil
     var action: KeyAction
     var width: CGFloat = 1
     var repeats = false
     var style: KeyStyle = .normal
     var isLetter = false
-    /// fn 层的替代按键。
+    /// Replacement key on the fn layer.
     var fnLabel: String? = nil
     var fnAction: KeyAction? = nil
 }
@@ -79,7 +79,7 @@ private func withFn(_ def: KeyDef, _ label: String, _ name: String) -> KeyDef {
     return d
 }
 
-/// 68 配列（65%），Mac 键位。每行合计 16 个单位。
+/// 68-key (65%) layout with Mac modifiers. Each row is 16 units wide.
 enum Layouts {
     static let columns: CGFloat = 16
     static let rowCount = 5
@@ -102,7 +102,7 @@ enum Layouts {
                    key("↑", "up", repeats: true), withFn(key("PgDn", "pagedown"), "End", "end")],
             [
                 mod(.ctrl, width: 1.25), mod(.alt, width: 1.25), mod(.cmd, width: 1.25),
-                key("空格", "space", width: 6.25, style: .normal),
+                key("space", "space", width: 6.25, style: .normal),
                 mod(.cmd), mod(.fn),
                 KeyDef(label: "", action: .inputSource, style: .function),
                 key("←", "left", repeats: true), key("↓", "down", repeats: true), key("→", "right", repeats: true),
