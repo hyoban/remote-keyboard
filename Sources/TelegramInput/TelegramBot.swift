@@ -2,7 +2,7 @@ import AppKit
 import Security
 import os
 
-private let tgLog = Logger(subsystem: "dev.hyoban.remote-keyboard", category: "telegram")
+private let tgLog = Logger(subsystem: "dev.hyoban.telegram-input", category: "bot")
 
 /// Telegram 机器人：在手机 Telegram 里给它发消息，文字会上屏到 Mac 当前光标处。
 /// Mac 主动长轮询 Telegram 服务器，不需要开端口或组网。只响应配对过的那一个账号。
@@ -149,7 +149,7 @@ final class TelegramBot {
                 refreshStatus()
                 send(chatID, "✅ 配对成功。现在发给我的文字会直接打到 Mac 当前的光标位置，下面的按钮可以发送按键。", keyboard: true)
             } else {
-                send(chatID, "请发送 Mac 菜单栏「屏幕键盘 → Telegram 机器人」里显示的 6 位配对码。")
+                send(chatID, "请发送 Mac 菜单栏「Telegram 输入」里显示的 6 位配对码。")
             }
             return
         }
@@ -173,7 +173,7 @@ final class TelegramBot {
             return
         }
         guard AXIsProcessTrusted() else {
-            send(chatID, "⚠️ Mac 上的屏幕键盘还没有辅助功能权限，没法打字。", replyTo: messageID)
+            send(chatID, "⚠️ Mac 上的「Telegram 输入」还没有辅助功能权限，没法打字。", replyTo: messageID)
             return
         }
 
@@ -287,7 +287,7 @@ struct BotError: LocalizedError {
 private enum Keychain {
     private static let base: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "dev.hyoban.remote-keyboard.telegram",
+        kSecAttrService as String: "dev.hyoban.telegram-input",
         kSecAttrAccount as String: "bot-token",
     ]
 
