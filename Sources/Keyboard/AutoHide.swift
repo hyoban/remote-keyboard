@@ -28,6 +28,8 @@ final class AutoHide {
     private var observedPID: pid_t?
     /// 当前聚焦的输入框；不在输入框里时为 nil。
     private var focusedTextElement: AXUIElement?
+    /// 不再需要避让的起始时间；稳定 0.6 秒后才回到原位，避免点一下旁边的按钮就来回跳。
+    private var restorePendingSince: Date?
 
     var followFocus: Bool {
         get { defaults.object(forKey: "followFocus") as? Bool ?? true }
@@ -107,7 +109,17 @@ final class AutoHide {
     private func updateAvoidance() {
         guard avoidInput else { return }
         let wasAvoiding = controller.avoidFrame != nil
-        controller.avoid(focusedTextElement.flatMap(avoidanceTarget))
+        let target = focusedTextElement.flatMap(avoidanceTarget)
+        if target == nil, wasAvoiding {
+            let since = restorePendingSince ?? Date()
+            if restorePendingSince == nil {
+                restorePendingSince = since
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.62) { [weak self] in self?.evaluateFocus() }
+            }
+            guard Date().timeIntervalSince(since) >= 0.6 else { return }
+        }
+        restorePendingSince = nil
+        controller.avoid(target)
         let avoiding = controller.avoidFrame != nil
         if avoiding != wasAvoiding {
             log.notice("\(avoiding ? "moved aside to avoid the text input" : "moved back", privacy: .public)")
