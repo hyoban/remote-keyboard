@@ -20,6 +20,8 @@ final class AutoHide {
     private var lastFrontmostPID: pid_t?
     private var lastLogged = ""
     private var enhancedPIDs: Set<pid_t> = []
+    /// 最近一次聚焦在输入框时所在的 App。
+    private var lastTextPID: pid_t?
     private var observer: AXObserver?
     private var observedPID: pid_t?
 
@@ -171,9 +173,18 @@ final class AutoHide {
                 isText = settable.boolValue
             }
         }
+        if isText {
+            lastTextPID = app.processIdentifier
+        } else if app.processIdentifier == lastTextPID, Self.containerRoles.contains(role) {
+            // Electron 等 App 重新渲染时，焦点会在同一个 App 里从输入框短暂落到容器上，不算离开输入框。
+            logOnce("\(appName): focused \(role), ignored (container in same app)")
+            return nil
+        }
         logOnce("\(appName): focused \(role) text=\(isText)")
         return isText
     }
+
+    private static let containerRoles: Set<String> = ["AXGroup", "AXWebArea", "AXScrollArea", "AXUnknown"]
 
     /// 同样的状态只记一次，避免每 0.5 秒刷屏。
     private func logOnce(_ message: String) {

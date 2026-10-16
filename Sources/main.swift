@@ -5,6 +5,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controller: KeyboardController!
     private var autoHide: AutoHide!
+    private let remoteDetector = RemoteDetector()
     private var statusItem: NSStatusItem!
     private var permissionTimer: Timer?
 
@@ -17,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setUpStatusItem()
 
         updatePermission(prompt: true)
+        remoteDetector.onChange = { [weak self] remote in
+            guard let self, self.remoteOnly else { return }
+            remote ? self.controller.show() : self.controller.hide()
+        }
+        remoteDetector.start()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.updatePermission(prompt: false)
         }
@@ -31,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         controller.show()
         return false
+    }
+
+    /// 仅在远程控制时显示：远程输入时显示键盘，本地真实键鼠操作时隐藏。
+    private var remoteOnly: Bool {
+        get { UserDefaults.standard.object(forKey: "remoteOnly") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "remoteOnly") }
     }
 
     private func updatePermission(prompt: Bool) {
@@ -83,6 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(item("重置位置", #selector(resetPosition)))
         menu.addItem(.separator())
+
+        let remote = item("仅在远程控制时显示", #selector(toggleRemoteOnly))
+        remote.state = remoteOnly ? .on : .off
+        menu.addItem(remote)
 
         let follow = item("进入输入框时展开，离开时收起", #selector(toggleFollowFocus))
         follow.state = autoHide.followFocus ? .on : .off
@@ -145,6 +161,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func resetPosition() {
         controller.show()
         controller.resetPosition()
+    }
+
+    @objc private func toggleRemoteOnly() {
+        remoteOnly.toggle()
+        if remoteOnly, remoteDetector.isRemote == false { controller.hide() }
+        if !remoteOnly { controller.show() }
     }
 
     @objc private func toggleFollowFocus() {
