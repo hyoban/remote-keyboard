@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<title>远程键盘</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #16181d; --muted: #6b7280;
+    --key: #e6e8ed; --key-active: #cdd2db; --border: #d9dce3;
+    --accent: #2563eb; --accent-text: #ffffff;
+    --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #181b21; --text: #e8eaef; --muted: #9097a3;
+      --key: #262a33; --key-active: #3a404c; --border: #2c313b;
+      --accent: #3b82f6;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font: 15px/1.4 system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    display: flex; flex-direction: column; gap: 8px;
+    height: 100dvh; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    overscroll-behavior: none; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+
+  header { display: flex; align-items: center; gap: 8px; flex: none; }
+  .status { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .seg { display: flex; background: var(--key); border-radius: 8px; padding: 2px; flex: none; }
+  .seg button { background: transparent; color: var(--muted); padding: 5px 12px; border-radius: 6px; font-size: 13px; }
+  .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+  .icon-btn { flex: none; width: 34px; height: 30px; border-radius: 8px; background: var(--key); font-size: 16px; }
+
+  .pad { flex: 1; min-height: 56px; position: relative; display: flex; }
+  textarea {
+    flex: 1; width: 100%; resize: none; outline: none;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); color: var(--text);
+    padding: 10px 12px; font: inherit; font-size: 17px;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .hint { position: absolute; right: 10px; bottom: 8px; font-size: 12px; color: var(--muted); pointer-events: none; }
+
+  .send-row { display: flex; gap: 6px; flex: none; }
+  .send-row button { flex: 1; height: 42px; border-radius: 10px; background: var(--key); font-size: 15px; }
+  .send-row button.primary { flex: 2; background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  body.live .send-row { display: none; }
+
+  .keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; flex: none; }
+  .keys button { height: 40px; border-radius: 8px; background: var(--key); font-size: 14px; padding: 0; }
+  .keys button.pressed { background: var(--key-active); }
+  .keys button.mod.once { background: var(--accent); color: var(--accent-text); }
+  .keys button.mod.lock { background: var(--accent); color: var(--accent-text); box-shadow: inset 0 -3px 0 rgba(255,255,255,.7); }
+  .keys.extra.hidden { display: none; }
+
+  dialog { border: 0; border-radius: 14px; padding: 18px; width: min(92vw, 420px); background: var(--panel); color: var(--text); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog h2 { margin: 0 0 12px; font-size: 17px; }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 14px; }
+  .field small { color: var(--muted); font-size: 12px; }
+  .field input, .field select { font: inherit; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .check { flex-direction: row; align-items: center; gap: 8px; }
+  .check input { width: 18px; height: 18px; }
+  .dialog-actions { display: flex; justify-content: flex-end; }
+  .dialog-actions button { padding: 9px 18px; border-radius: 8px; background: var(--accent); color: var(--accent-text); }
+
+  .toast { position: fixed; left: 50%; top: 50px; transform: translateX(-50%); background: rgba(20,22,27,.92); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">连接中…</span></div>
+    <div class="seg" id="modeSeg">
+      <button data-mode="sentence" class="on">整句</button>
+      <button data-mode="live">实时</button>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="设置">⚙︎</button>
+  </header>
+
+  <div class="pad">
+    <textarea id="ta" placeholder="在这里打字或语音输入，按发送上屏到 Mac" enterkeyhint="send"
+      autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <span class="hint" id="hint"></span>
+  </div>
+
+  <div class="send-row">
+    <button id="clearBtn">清空</button>
+    <button id="sendReturnBtn">发送 + ⏎</button>
+    <button id="sendBtn" class="primary">发送</button>
+  </div>
+
+  <div class="keys" id="keys">
+    <button class="mod" data-mod="cmd">⌘</button>
+    <button class="mod" data-mod="shift">⇧</button>
+    <button class="mod" data-mod="alt">⌥</button>
+    <button class="mod" data-mod="ctrl">⌃</button>
+    <button data-key="escape">Esc</button>
+    <button data-key="tab">Tab</button>
+
+    <button data-key="left" data-repeat>←</button>
+    <button data-key="up" data-repeat>↑</button>
+    <button data-key="down" data-repeat>↓</button>
+    <button data-key="right" data-repeat>→</button>
+    <button data-key="backspace" data-repeat>⌫</button>
+    <button data-key="return">⏎</button>
+  </div>
+  <div class="keys extra" id="extraKeys">
+    <button data-key="c" data-mods="cmd">⌘C</button>
+    <button data-key="v" data-mods="cmd">⌘V</button>
+    <button data-key="x" data-mods="cmd">⌘X</button>
+    <button data-key="z" data-mods="cmd">⌘Z</button>
+    <button data-key="a" data-mods="cmd">⌘A</button>
+    <button data-key="s" data-mods="cmd">⌘S</button>
+
+    <button data-key="tab" data-mods="cmd">⌘Tab</button>
+    <button data-key="space" data-mods="cmd">⌘空格</button>
+    <button data-key="w" data-mods="cmd">⌘W</button>
+    <button data-key="f" data-mods="cmd">⌘F</button>
+    <button data-key="c" data-mods="ctrl">⌃C</button>
+    <button data-key="space">空格</button>
+  </div>
+
+  <dialog id="settings">
+    <h2>设置</h2>
+    <label class="field">
+      访问 Token
+      <input id="tokenInput" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <small>扫 Mac 终端里的二维码打开时会自动填好</small>
+    </label>
+    <label class="field">
+      输入法回车键
+      <select id="enterSelect">
+        <option value="send">发送</option>
+        <option value="sendReturn">发送 + 回车</option>
+        <option value="newline">换行</option>
+      </select>
+    </label>
+    <label class="field">
+      上屏方式
+      <select id="injectSelect">
+        <option value="unicode">直接输入（默认）</option>
+        <option value="paste">粘贴（兼容性最好，会临时占用剪贴板）</option>
+      </select>
+      <small>某个 App 里中文上屏不正常时，切到“粘贴”试试</small>
+    </label>
+    <label class="field check">
+      <input type="checkbox" id="extraToggle"> 显示快捷键区
+    </label>
+    <div class="dialog-actions"><button id="settingsDone">完成</button></div>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const ta = $('ta');
+
+  // ---------- 设置 ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('rk.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('rk.' + k, JSON.stringify(v)); } catch {} },
+  };
+  const urlToken = new URLSearchParams(location.search).get('t');
+  if (urlToken) {
+    store.set('token', urlToken);
+    history.replaceState(null, '', location.pathname);
+  }
+  const settings = {
+    token: store.get('token', ''),
+    enter: store.get('enter', 'send'),
+    inject: store.get('inject', 'unicode'),
+    extra: store.get('extra', true),
+    mode: store.get('mode', 'sentence'),
+  };
+
+  // ---------- 通信 ----------
+  let chain = Promise.resolve(true);
+  function send(ops) {
+    const p = chain.then(() => post(ops));
+    chain = p.catch(() => false);
+    return p;
+  }
+  async function post(ops) {
+    if (!settings.token) { setStatus('bad', '缺少 Token，点右上角设置'); return false; }
+    try {
+      const r = await fetch('api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Token': settings.token },
+        body: JSON.stringify({ ops }),
+      });
+      if (r.status === 401) { setStatus('bad', 'Token 不对，点右上角设置'); return false; }
+      const j = await r.json();
+      if (j.trusted === false) setStatus('warn', '已连接 · Mac 未授权辅助功能');
+      else setStatus('ok', '已连接');
+      if (!j.ok && j.error) toast(j.error);
+      return !!j.ok;
+    } catch {
+      setStatus('bad', '连不上 Mac');
+      return false;
+    }
+  }
+  function setStatus(kind, text) {
+    $('dot').className = 'dot ' + (kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : '');
+    $('statusText').textContent = text;
+  }
+  function ping() { if (document.visibilityState === 'visible') send([{ type: 'ping' }]); }
+  setInterval(ping, 5000);
+  document.addEventListener('visibilitychange', ping);
+
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
+  }
+
+  // ---------- 修饰键（点一下 = 只作用于下一个键，快速点两下 = 锁定） ----------
+  const mods = { cmd: 0, shift: 0, alt: 0, ctrl: 0 };
+  const modTapAt = {};
+  function tapMod(name) {
+    const now = Date.now();
+    if (mods[name] === 0) mods[name] = 1;
+    else if (mods[name] === 1 && now - (modTapAt[name] || 0) < 350) mods[name] = 2;
+    else mods[name] = 0;
+    modTapAt[name] = now;
+    renderMods();
+  }
+  function activeMods() { return Object.keys(mods).filter((k) => mods[k] > 0); }
+  function consumeMods() {
+    for (const k in mods) if (mods[k] === 1) mods[k] = 0;
+    renderMods();
+  }
+  function renderMods() {
+    document.querySelectorAll('[data-mod]').forEach((b) => {
+      const s = mods[b.dataset.mod];
+      b.classList.toggle('once', s === 1);
+      b.classList.toggle('lock', s === 2);
+    });
+  }
+
+  function pressKey(key, extraMods = []) {
+    const all = [...new Set([...extraMods, ...activeMods()])];
+    consumeMods();
+    send([{ type: 'key', key, mods: all }]);
+  }
+
+  // ---------- 按键区：不抢输入框焦点，长按自动连发 ----------
+  function bindKeys(container) {
+    container.querySelectorAll('button').forEach((btn) => {
+      let delay, timer;
+      const stop = () => { clearTimeout(delay); clearInterval(timer); btn.classList.remove('pressed'); };
+      btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        btn.classList.add('pressed');
+        if (btn.dataset.mod) { tapMod(btn.dataset.mod); return; }
+        const key = btn.dataset.key;
+        const bm = btn.dataset.mods ? btn.dataset.mods.split(',') : [];
+        if (navigator.vibrate) navigator.vibrate(8);
+        pressKey(key, bm);
+        if ('repeat' in btn.dataset) {
+          delay = setTimeout(() => { timer = setInterval(() => pressKey(key, bm), 70); }, 400);
+        }
+      });
+      btn.addEventListener('pointerup', stop);
+      btn.addEventListener('pointercancel', stop);
+      btn.addEventListener('pointerleave', stop);
+    });
+  }
+  bindKeys($('keys'));
+  bindKeys($('extraKeys'));
+
+  // ---------- 整句模式 ----------
+  async function sendSentence(withReturn) {
+    const text = ta.value;
+    if (!text && !withReturn) return;
+    const ops = [];
+    if (text) ops.push({ type: 'text', text, mode: settings.inject });
+    if (withReturn) ops.push({ type: 'key', key: 'return' });
+    ta.value = '';
+    const ok = await send(ops);
+    if (!ok && text && !ta.value) { ta.value = text; toast('发送失败，内容已还原'); }
+  }
+  for (const [id, withReturn] of [['sendBtn', false], ['sendReturnBtn', true]]) {
+    const b = $(id);
+    b.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); sendSentence(withReturn); });
+  }
+  $('clearBtn').addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  $('clearBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); ta.value = ''; });
+
+  // ---------- 实时模式：对比输入框前后内容，把差异同步过去 ----------
+  // 输入框里常驻一个零宽字符，这样在“空”输入框里按删除也能被感知到。
+  const SENTINEL = '​';
+  let composing = false;
+  let last = '';
+
+  function resetLive() { ta.value = SENTINEL; last = SENTINEL; }
+
+  function flushLive() {
+    const cur = ta.value;
+    if (cur === last) return;
+    const a = Array.from(last), b = Array.from(cur);
+    let p = 0;
+    while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    let s = 0;
+    while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+    const del = a.length - p - s;
+    const ins = b.slice(p, b.length - s).join('').replace(/​/g, '');
+    const ops = [];
+    if (del > 0) ops.push({ type: 'key', key: 'backspace', repeat: del });
+    if (ins) {
+      const m = activeMods();
+      if (m.length && ins.length === 1 && /^[a-z0-9`\-=\[\]\\;',./]$/i.test(ins)) {
+        ops.push({ type: 'key', key: ins.toLowerCase(), mods: m });
+        consumeMods();
+      } else {
+        ops.push({ type: 'text', text: ins, mode: settings.inject });
+      }
+    }
+    if (ops.length) send(ops);
+    last = cur;
+    if (!cur.startsWith(SENTINEL) || cur.length > 80) {
+      resetLive();
+      ta.setSelectionRange(1, 1);
+    }
+  }
+
+  ta.addEventListener('compositionstart', () => { composing = true; });
+  ta.addEventListener('compositionend', () => {
+    composing = false;
+    if (settings.mode === 'live') setTimeout(flushLive, 0);
+  });
+  ta.addEventListener('input', (e) => {
+    if (settings.mode !== 'live' || composing || e.isComposing) return;
+    flushLive();
+  });
+
+  // ---------- 回车 ----------
+  function handleEnter(e) {
+    if (settings.mode === 'live') {
+      e.preventDefault();
+      pressKey('return');
+      return;
+    }
+    if (settings.enter === 'newline') return;
+    e.preventDefault();
+    sendSentence(settings.enter === 'sendReturn');
+  }
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing && !composing) handleEnter(e);
+  });
+  ta.addEventListener('beforeinput', (e) => {
+    if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') && !composing) handleEnter(e);
+  });
+
+  // ---------- 模式切换 ----------
+  function applyMode() {
+    document.body.classList.toggle('live', settings.mode === 'live');
+    document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === settings.mode));
+    if (settings.mode === 'live') {
+      resetLive();
+      ta.placeholder = '';
+      ta.setAttribute('enterkeyhint', 'enter');
+      $('hint').textContent = '实时模式：打的字直接同步到 Mac';
+    } else {
+      ta.value = '';
+      ta.placeholder = '在这里打字或语音输入，按发送上屏到 Mac';
+      ta.setAttribute('enterkeyhint', settings.enter === 'newline' ? 'enter' : 'send');
+      $('hint').textContent = '';
+    }
+  }
+  document.querySelectorAll('#modeSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      settings.mode = b.dataset.mode;
+      store.set('mode', settings.mode);
+      applyMode();
+      ta.focus();
+    });
+  });
+
+  // ---------- 设置面板 ----------
+  const dlg = $('settings');
+  $('settingsBtn').addEventListener('click', () => {
+    $('tokenInput').value = settings.token;
+    $('enterSelect').value = settings.enter;
+    $('injectSelect').value = settings.inject;
+    $('extraToggle').checked = settings.extra;
+    dlg.showModal();
+  });
+  $('settingsDone').addEventListener('click', () => {
+    settings.token = $('tokenInput').value.trim();
+    settings.enter = $('enterSelect').value;
+    settings.inject = $('injectSelect').value;
+    settings.extra = $('extraToggle').checked;
+    for (const k of ['token', 'enter', 'inject', 'extra']) store.set(k, settings[k]);
+    applyExtra();
+    applyMode();
+    dlg.close();
+    ping();
+  });
+  function applyExtra() { $('extraKeys').classList.toggle('hidden', !settings.extra); }
+
+  applyExtra();
+  applyMode();
+  ping();
+})();
+</script>
+</body>
+</html>
