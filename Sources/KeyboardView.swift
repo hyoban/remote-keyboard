@@ -46,6 +46,7 @@ final class KeyboardView: NSView {
 
     var onCollapse: (() -> Void)?
     var onPermissionTap: (() -> Void)?
+    var onActivity: (() -> Void)?
     var minWidth: CGFloat = 420
 
     let mods = ModifierState()
@@ -192,6 +193,7 @@ final class KeyboardView: NSView {
     // MARK: 交互
 
     override func mouseDown(with event: NSEvent) {
+        onActivity?()
         let p = convert(event.locationInWindow, from: nil)
         if p.y < metrics.topHeight {
             if collapseRect.contains(p) {

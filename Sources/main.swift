@@ -4,12 +4,15 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controller: KeyboardController!
+    private var autoHide: AutoHide!
     private var statusItem: NSStatusItem!
     private var permissionTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KeyboardController()
         controller.keyboardView.onPermissionTap = { [weak self] in self?.openAccessibilitySettings() }
+        autoHide = AutoHide(controller: controller)
+        controller.keyboardView.onActivity = { [weak self] in self?.autoHide.noteActivity() }
         controller.show()
         setUpStatusItem()
 
@@ -82,6 +85,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("重置位置", #selector(resetPosition)))
         menu.addItem(.separator())
 
+        let follow = item("进入输入框时展开，离开时收起", #selector(toggleFollowFocus))
+        follow.state = autoHide.followFocus ? .on : .off
+        menu.addItem(follow)
+
+        let idleMenu = NSMenu()
+        for seconds in [0, 15, 30, 60] {
+            let i = item(seconds == 0 ? "从不" : "\(seconds) 秒", #selector(setIdle(_:)))
+            i.representedObject = seconds
+            i.state = autoHide.idleSeconds == seconds ? .on : .off
+            idleMenu.addItem(i)
+        }
+        let idleItem = NSMenuItem(title: "闲置后收起", action: nil, keyEquivalent: "")
+        idleItem.submenu = idleMenu
+        menu.addItem(idleItem)
+        menu.addItem(.separator())
+
         let login = item("开机自动启动", #selector(toggleLaunchAtLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
@@ -127,6 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func resetPosition() {
         controller.show()
         controller.resetPosition()
+    }
+
+    @objc private func toggleFollowFocus() {
+        autoHide.followFocus.toggle()
+    }
+
+    @objc private func setIdle(_ sender: NSMenuItem) {
+        guard let seconds = sender.representedObject as? Int else { return }
+        autoHide.idleSeconds = seconds
     }
 
     @objc private func toggleLaunchAtLogin() {
