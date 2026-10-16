@@ -28,7 +28,12 @@ final class KeyboardController {
     private let bubble = BubbleView()
     private let panel: KeyboardPanel
     private(set) var collapsed = false
+    /// 用户放置的位置（“家”）。自动避让只是临时挪开，不会改它。
     private var expandedFrame: NSRect
+    /// 正在避让输入框时的临时位置；nil 表示在用户放的位置。
+    private(set) var avoidFrame: NSRect?
+    /// 代码自己移动窗口时为 true，这时的移动不记成用户的新位置。
+    private var movingProgrammatically = false
     private let defaults = UserDefaults.standard
     /// 布局改成 68 配列后宽高比变了，换个 key 让旧的窗口尺寸失效。
     private let frameKey = "frame.68"
@@ -87,7 +92,8 @@ final class KeyboardController {
 
     func collapse() {
         guard !collapsed else { return }
-        expandedFrame = panel.frame
+        if avoidFrame == nil { expandedFrame = panel.frame }
+        avoidFrame = nil
         collapsed = true
         let s = Self.bubbleSize
         panel.contentView = bubble
@@ -122,8 +128,49 @@ final class KeyboardController {
         panel.setFrame(Self.defaultFrame(), display: true)
     }
 
+    /// 让键盘避开 target（Cocoa 坐标）：挡住时挪到屏幕另一半，不挡了就回到原位。
+    func avoid(_ target: NSRect?) {
+        guard !collapsed, panel.isVisible else { return }
+        let home = expandedFrame
+        let margin: CGFloat = 12
+        guard let target, home.insetBy(dx: -margin, dy: -margin).intersects(target) else {
+            if avoidFrame != nil {
+                avoidFrame = nil
+                move(to: home)
+            }
+            return
+        }
+        let vf = (panel.screen ?? NSScreen.main)?.visibleFrame ?? home
+        var alternate = home
+        alternate.origin.y = home.midY < vf.midY ? vf.maxY - home.height - 8 : vf.minY + 8
+        alternate = clamped(alternate)
+        func overlap(_ r: NSRect) -> CGFloat {
+            let i = r.intersection(target)
+            return i.isNull ? 0 : i.width * i.height
+        }
+        // 挪过去挡得更少才挪。
+        let best = overlap(alternate) < overlap(home) ? alternate : home
+        if best == home {
+            if avoidFrame != nil {
+                avoidFrame = nil
+                move(to: home)
+            }
+        } else if avoidFrame != best {
+            avoidFrame = best
+            move(to: best)
+        }
+    }
+
+    private func move(to frame: NSRect) {
+        movingProgrammatically = true
+        panel.setFrame(frame, display: true, animate: true)
+        movingProgrammatically = false
+    }
+
     private func saveFrame() {
-        guard !collapsed else { return }
+        guard !collapsed, !movingProgrammatically else { return }
+        // 用户自己拖动或缩放了键盘：这就是新的位置，不再处于避让状态。
+        avoidFrame = nil
         expandedFrame = panel.frame
         defaults.set(NSStringFromRect(expandedFrame), forKey: frameKey)
     }

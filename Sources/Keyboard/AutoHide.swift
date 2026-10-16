@@ -26,6 +26,8 @@ final class AutoHide {
     private var lastOutsideClick = Date.distantPast
     private var observer: AXObserver?
     private var observedPID: pid_t?
+    /// 当前聚焦的输入框；不在输入框里时为 nil。
+    private var focusedTextElement: AXUIElement?
 
     var followFocus: Bool {
         get { defaults.object(forKey: "followFocus") as? Bool ?? true }
@@ -33,6 +35,15 @@ final class AutoHide {
             defaults.set(newValue, forKey: "followFocus")
             lastTextFocused = nil
             pendingFocus = nil
+        }
+    }
+
+    /// 自动避开输入框：键盘挡住当前输入框或光标所在行时，临时挪到屏幕另一半。
+    var avoidInput: Bool {
+        get { defaults.object(forKey: "avoidInput") as? Bool ?? true }
+        set {
+            defaults.set(newValue, forKey: "avoidInput")
+            if !newValue { controller.avoid(nil) }
         }
     }
 
@@ -81,20 +92,81 @@ final class AutoHide {
     }
 
     private func evaluateFocus() {
-        guard controller.isVisible, followFocus else { return }
+        guard controller.isVisible, followFocus || avoidInput else { return }
         guard AXIsProcessTrusted() else {
             logOnce("not trusted, focus detection disabled")
             return
         }
         // nil 表示这次没查到（超时、没有焦点元素等），不当作焦点变化。
-        if let focused = isTextInputFocused() {
+        if let focused = isTextInputFocused(), followFocus {
             handleFocus(focused)
         }
+        updateAvoidance()
+    }
+
+    private func updateAvoidance() {
+        guard avoidInput else { return }
+        let wasAvoiding = controller.avoidFrame != nil
+        controller.avoid(focusedTextElement.flatMap(avoidanceTarget))
+        let avoiding = controller.avoidFrame != nil
+        if avoiding != wasAvoiding {
+            log.notice("\(avoiding ? "moved aside to avoid the text input" : "moved back", privacy: .public)")
+        }
+    }
+
+    /// 需要避开的区域（Cocoa 坐标）：矮的输入框用整个输入框；高的输入框（编辑器、文档）只看光标附近几行。
+    private func avoidanceTarget(_ element: AXUIElement) -> NSRect? {
+        if let frame = Self.frame(of: element), frame.height <= 200 {
+            return Self.cocoaRect(frame)
+        }
+        if let caret = Self.caretBounds(of: element) {
+            return Self.cocoaRect(caret.insetBy(dx: -20, dy: -60))
+        }
+        return nil
+    }
+
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        var pos = CGPoint.zero, size = CGSize.zero
+        guard let posValue = axValue(element, kAXPositionAttribute),
+              let sizeValue = axValue(element, kAXSizeAttribute),
+              AXValueGetValue(posValue, .cgPoint, &pos),
+              AXValueGetValue(sizeValue, .cgSize, &size)
+        else { return nil }
+        return CGRect(origin: pos, size: size)
+    }
+
+    private static func caretBounds(of element: AXUIElement) -> CGRect? {
+        var range: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+              let range
+        else { return nil }
+        var bounds: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, kAXBoundsForRangeParameterizedAttribute as CFString, range, &bounds) == .success,
+            let bounds, CFGetTypeID(bounds) == AXValueGetTypeID()
+        else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(bounds as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
+        return rect
+    }
+
+    private static func axValue(_ element: AXUIElement, _ attribute: String) -> AXValue? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID()
+        else { return nil }
+        return (value as! AXValue)
+    }
+
+    /// 辅助功能接口用 Quartz 坐标（原点在主屏左上角），窗口用 Cocoa 坐标（原点在主屏左下角）。
+    private static func cocoaRect(_ r: CGRect) -> NSRect {
+        let h = NSScreen.screens.first?.frame.height ?? 0
+        return NSRect(x: r.minX, y: h - r.maxY, width: r.width, height: r.height)
     }
 
     /// 订阅前台 App 的焦点变化通知，焦点一变就立刻检查。
     private func observeFrontmostApp() {
-        guard followFocus, AXIsProcessTrusted(),
+        guard followFocus || avoidInput, AXIsProcessTrusted(),
               let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
               pid != observedPID
         else { return }
@@ -111,6 +183,9 @@ final class AutoHide {
         guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }
         let app = AXUIElementCreateApplication(pid)
         AXObserverAddNotification(created, app, kAXFocusedUIElementChangedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        // 光标移动、换行时也重新判断要不要避让。
+        AXObserverAddNotification(created, app, kAXSelectedTextChangedNotification as CFString,
                                   Unmanaged.passUnretained(self).toOpaque())
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
         observer = created
@@ -181,6 +256,7 @@ final class AutoHide {
             }
         }
         if isText {
+            focusedTextElement = element
             lastTextPID = app.processIdentifier
         } else if app.processIdentifier == lastTextPID, Self.containerRoles.contains(role),
                   Date().timeIntervalSince(lastOutsideClick) > 1 {
@@ -188,6 +264,7 @@ final class AutoHide {
             logOnce("\(appName): focused \(role) without click, ignored")
             return nil
         }
+        if !isText { focusedTextElement = nil }
         logOnce("\(appName): focused \(role) text=\(isText)")
         return isText
     }

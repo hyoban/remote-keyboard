@@ -103,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         follow.state = autoHide.followFocus ? .on : .off
         menu.addItem(follow)
 
+        let avoid = item("自动避开输入框", #selector(toggleAvoidInput))
+        avoid.state = autoHide.avoidInput ? .on : .off
+        menu.addItem(avoid)
+
         let idleMenu = NSMenu()
         for seconds in [0, 15, 30, 60] {
             let i = item(seconds == 0 ? "从不" : "\(seconds) 秒", #selector(setIdle(_:)))
@@ -166,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         remoteOnly.toggle()
         if remoteOnly, remoteDetector.isRemote == false { controller.hide() }
         if !remoteOnly { controller.show() }
+    }
+
+    @objc private func toggleAvoidInput() {
+        autoHide.avoidInput.toggle()
     }
 
     @objc private func toggleFollowFocus() {
